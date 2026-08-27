@@ -78,48 +78,54 @@
 <div id="destinationModal" class="admin-modal-backdrop" style="display:none;" onclick="if(event.target===this)closeDestinationModal();">
     <div class="admin-modal-card">
         <div class="admin-modal-head">
-            <h3>Edit Destination</h3>
-            <button type="button" class="admin-modal-close" onclick="closeDestinationModal();"><i class="fa-solid fa-xmark"></i></button>
+            <div class="admin-modal-icon"><i class="fa-solid fa-pen"></i></div>
+            <h3 class="admin-modal-title">Edit Destination</h3>
+            {{-- Filled in with the destination's name so the dialog says which
+                 record is being edited without a second heading. --}}
+            <p class="admin-modal-sub" id="destModalSub"></p>
+            <button type="button" class="admin-modal-close" aria-label="Close" onclick="closeDestinationModal();"><i class="fa-solid fa-xmark"></i></button>
         </div>
-        <form id="destinationForm" method="POST" enctype="multipart/form-data">
+        <form id="destinationForm" method="POST" enctype="multipart/form-data" class="admin-modal-form">
             @csrf @method('PUT')
-            <div class="admin-form-group">
-                <label>Destination Name</label>
-                <input type="text" name="name" id="destModalName" class="admin-input" required>
-            </div>
-            <div class="admin-form-row">
+            <div class="admin-modal-body">
                 <div class="admin-form-group">
-                    <label>Country</label>
-                    <input type="text" name="country" id="destModalCountry" class="admin-input">
+                    <label>Destination Name</label>
+                    <input type="text" name="name" id="destModalName" class="admin-input" required>
+                </div>
+                <div class="admin-form-row">
+                    <div class="admin-form-group">
+                        <label>Country</label>
+                        <input type="text" name="country" id="destModalCountry" class="admin-input">
+                    </div>
+                    <div class="admin-form-group">
+                        <label>Region</label>
+                        <select name="region" id="destModalRegion" class="admin-input" required>
+                            <option value="local">Local</option>
+                            <option value="international">International</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="admin-form-group">
-                    <label>Region</label>
-                    <select name="region" id="destModalRegion" class="admin-input" required>
-                        <option value="local">Local</option>
-                        <option value="international">International</option>
-                    </select>
+                    <label>Description</label>
+                    <textarea name="description" id="destModalDescription" class="admin-input" rows="4"></textarea>
                 </div>
-            </div>
-            <div class="admin-form-group">
-                <label>Description</label>
-                <textarea name="description" id="destModalDescription" class="admin-input" rows="4"></textarea>
-            </div>
-            <div class="admin-form-group">
-                <label>Featured Image</label>
-                <img id="destModalImagePreview" src="" alt="" style="display:none;height:70px;border-radius:8px;margin-bottom:8px;">
-                <label class="admin-file-drop">
-                    <input type="file" name="image" accept="image/*" style="display:none;" onchange="this.closest('.admin-file-drop').querySelector('span').textContent = this.files[0]?.name || 'Click to upload or drag and drop';">
-                    <i class="fa-solid fa-upload"></i>
-                    <span>Click to upload or drag and drop</span>
-                    <small>PNG, JPG up to 10MB</small>
-                </label>
-                <button type="button" id="destFetchImageBtn" class="admin-btn admin-btn-outline admin-btn-sm" style="margin-top:8px;">
-                    <i class="fa-solid fa-cloud-arrow-down"></i> Fetch Photo via API
-                </button>
+                <div class="admin-form-group">
+                    <label>Featured Image</label>
+                    <img id="destModalImagePreview" class="admin-modal-thumb" src="" alt="" style="display:none;">
+                    <label class="admin-file-drop">
+                        <input type="file" name="image" accept="image/*" style="display:none;" onchange="this.closest('.admin-file-drop').querySelector('span').textContent = this.files[0]?.name || 'Click to upload or drag and drop';">
+                        <i class="fa-solid fa-upload"></i>
+                        <span>Click to upload or drag and drop</span>
+                        <small>PNG, JPG up to 10MB</small>
+                    </label>
+                    <button type="button" id="destFetchImageBtn" class="admin-btn admin-btn-outline admin-btn-sm" style="margin-top:8px;">
+                        <i class="fa-solid fa-cloud-arrow-down"></i> Fetch Photo via API
+                    </button>
+                </div>
             </div>
             <div class="admin-modal-actions">
-                <button type="button" class="admin-btn admin-btn-outline" onclick="closeDestinationModal();">Cancel</button>
-                <button type="submit" class="admin-btn admin-btn-primary">Save Changes</button>
+                <button type="button" class="admin-modal-btn admin-modal-btn-cancel" onclick="closeDestinationModal();">Cancel</button>
+                <button type="submit" class="admin-modal-btn admin-modal-btn-primary">Save Changes</button>
             </div>
         </form>
         <form id="destinationFetchImageForm" method="POST" style="display:none;">@csrf</form>
@@ -127,23 +133,22 @@
 </div>
 
 <div id="deleteDestinationModal" class="admin-modal-backdrop" style="display:none;" onclick="if(event.target===this)closeDeleteDestinationModal();">
-    <div class="admin-modal-card">
+    <div class="admin-modal-card admin-modal-card-sm">
         <div class="admin-modal-head">
-            <h3>Delete Destination</h3>
-            <button type="button" class="admin-modal-close" onclick="closeDeleteDestinationModal();"><i class="fa-solid fa-xmark"></i></button>
-        </div>
-        <div style="padding:20px 24px;">
-            <p style="margin:0 0 20px;font-size:14px;color:var(--admin-muted, #8A7A6C);line-height:1.6;">
-                Delete <strong id="deleteDestinationName" style="color:var(--admin-ink, #241208);"></strong>? This cannot be undone.
+            <div class="admin-modal-icon admin-modal-icon-danger"><i class="fa-solid fa-trash-can"></i></div>
+            <h3 class="admin-modal-title">Delete Destination?</h3>
+            <p class="admin-modal-sub">
+                <strong id="deleteDestinationName"></strong> will be permanently removed.<br>This action cannot be undone.
             </p>
-            <form id="deleteDestinationForm" method="POST">
-                @csrf @method('DELETE')
-                <div class="admin-modal-actions">
-                    <button type="button" class="admin-btn admin-btn-outline" onclick="closeDeleteDestinationModal();">Cancel</button>
-                    <button type="submit" class="admin-btn admin-btn-primary" style="background:var(--admin-danger, #D64545);border-color:var(--admin-danger, #D64545);">Delete Destination</button>
-                </div>
-            </form>
+            <button type="button" class="admin-modal-close" aria-label="Close" onclick="closeDeleteDestinationModal();"><i class="fa-solid fa-xmark"></i></button>
         </div>
+        <form id="deleteDestinationForm" method="POST">
+            @csrf @method('DELETE')
+            <div class="admin-modal-actions">
+                <button type="button" class="admin-modal-btn admin-modal-btn-cancel" onclick="closeDeleteDestinationModal();">Cancel</button>
+                <button type="submit" class="admin-modal-btn admin-modal-btn-danger"><i class="fa-solid fa-trash"></i> Delete</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -165,6 +170,7 @@
     document.addEventListener('click', function (e) {
         const btn = e.target.closest('.js-edit-destination-btn');
         if (!btn) return;
+        document.getElementById('destModalSub').textContent = btn.dataset.name || '';
         document.getElementById('destModalName').value = btn.dataset.name || '';
         document.getElementById('destModalCountry').value = btn.dataset.country || '';
         document.getElementById('destModalRegion').value = btn.dataset.region || 'local';

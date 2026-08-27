@@ -1090,6 +1090,29 @@ button:disabled { opacity: 0.65; cursor: not-allowed; }
 .dash-content { padding: 28px 32px; flex: 1; display: flex; flex-direction: column; min-height: 100%; }
 .empty-state-center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; min-height: 60vh; }
 
+/* Both halves of a first-run empty state — the "set up your profile" prompt and
+   whatever the page shows once that's out of the way — live in the markup, and
+   which one shows is driven by a root attribute set in the layout <head>: before
+   first paint, so neither half flashes, and from a single flag, so skipping on
+   one tab carries to every other tab.
+
+   display:contents means these wrappers generate no box at all, so the markup
+   inside lays out exactly as it did before it was wrapped — that matters where
+   the wrapped content is a flex/grid container or relies on height:100%. A
+   wrapper with no [data-empty-when] is unconditional: the profile already
+   exists, so there is nothing to skip. */
+.empty-state-swap { display: contents; }
+.empty-state-swap[data-empty-when="skipped"] { display: none; }
+:root[data-profile-skipped] .empty-state-swap[data-empty-when="profile"] { display: none; }
+:root[data-profile-skipped] .empty-state-swap[data-empty-when="skipped"] { display: contents; }
+.empty-state-skip {
+  margin-top: 18px; background: none; border: none; padding: 0;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  color: var(--primary); text-decoration: underline; cursor: pointer;
+  transition: opacity .15s;
+}
+.empty-state-skip:hover { opacity: .72; }
+
 /* Smooth page fade-in */
 @keyframes dashFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .dash-content { animation: dashFadeIn 0.18s ease; }
@@ -2116,6 +2139,8 @@ button:disabled { opacity: 0.65; cursor: not-allowed; }
   --admin-brand-bg: var(--sidebar-bg); --admin-brand-bg-2: var(--sidebar-bg);
   --admin-accent: var(--primary); --admin-accent-dark: var(--primary-dark);
   --admin-danger: #D64545; --admin-success: #2F9E5B;
+  /* Solid danger buttons only — see .admin-modal-btn-danger. */
+  --admin-danger-deep: #BE3535;
   margin: 0; background: var(--admin-bg); color: var(--admin-ink);
   font-family: 'Hanken Grotesk', system-ui, sans-serif;
 }
@@ -2391,17 +2416,108 @@ button:disabled { opacity: 0.65; cursor: not-allowed; }
 .admin-attr-card-foot { font-size: 13px; font-weight: 700; color: var(--admin-ink); }
 .admin-attr-card-foot form { margin: 0; }
 
-/* Modals */
+/* ── Modals ────────────────────────────────────────────────
+   One shell for every admin dialog, shaped like the traveler-side
+   ones: tinted round glyph over a centred title, a body that scrolls
+   on its own, and a full-width actions row pinned to the bottom.
+
+   Every surface is drawn from the theme variables. The card used to
+   be a hardcoded #fff, which on Nightflight put the theme's near-white
+   ink on a white card and made the whole dialog unreadable. */
 .admin-modal-backdrop {
-  position: fixed; inset: 0; background: rgba(36,18,8,.5); z-index: 1000;
-  display: flex; align-items: center; justify-content: center; padding: 20px;
+  position: fixed; inset: 0; background: rgba(16,10,5,.55); backdrop-filter: blur(3px);
+  z-index: 2100; display: flex; align-items: center; justify-content: center; padding: 20px;
+  animation: adminModalFadeIn .18s ease both;
 }
-.admin-modal-card { background: #fff; border-radius: 18px; width: 100%; max-width: 480px; max-height: 88vh; overflow-y: auto; }
-.admin-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--admin-border); }
-.admin-modal-head h3 { margin: 0; font-size: 18px; font-weight: 800; }
-.admin-modal-close { background: none; border: none; color: var(--admin-muted); cursor: pointer; font-size: 16px; }
-.admin-modal-card form { padding: 20px 24px; }
-.admin-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+.admin-modal-card {
+  background: var(--admin-card); border: 1.5px solid var(--admin-border); border-radius: 20px;
+  width: 100%; max-width: 480px; max-height: 88vh; overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 24px 60px rgba(0,0,0,.28);
+  animation: adminModalPopIn .22s cubic-bezier(.34,1.4,.64,1) both;
+}
+.admin-modal-card-sm { max-width: 380px; }
+@keyframes adminModalFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes adminModalPopIn {
+  from { opacity: 0; transform: scale(.96) translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-modal-backdrop, .admin-modal-card { animation: none; }
+}
+
+/* Header — tinted glyph, title, one line of context about the record. */
+.admin-modal-head {
+  position: relative; flex-shrink: 0; text-align: center;
+  background: var(--admin-bg); border-bottom: 1px solid var(--admin-border);
+  padding: 28px 44px 20px;
+}
+.admin-modal-icon {
+  width: 52px; height: 52px; border-radius: 50%; margin: 0 auto 12px;
+  display: flex; align-items: center; justify-content: center; font-size: 21px;
+  background: var(--primary-light); color: var(--admin-accent);
+}
+.admin-modal-icon-danger { background: rgba(214,69,69,.14); color: var(--danger); }
+.admin-modal-title { margin: 0 0 6px; font-size: 18px; font-weight: 800; color: var(--admin-ink); }
+.admin-modal-sub { margin: 0; font-size: 13px; color: var(--admin-muted); line-height: 1.55; }
+/* Nudged a third of the way toward the ink: plain --admin-muted lands at
+   ~3.5:1 on the header tint under Retro Wanderlust and Sakura Bloom,
+   short of the floor for 13px text. The mix clears 4.8:1 on every theme
+   and still reads as secondary next to the 800-weight title. Browsers
+   without color-mix() keep the plain muted above. */
+@supports (color: color-mix(in srgb, red, blue)) {
+  .admin-modal-sub { color: color-mix(in srgb, var(--admin-muted) 70%, var(--admin-ink)); }
+}
+.admin-modal-sub strong { color: var(--admin-ink); font-weight: 700; }
+.admin-modal-close {
+  position: absolute; top: 14px; right: 14px; width: 30px; height: 30px; border-radius: 50%;
+  background: none; border: none; color: var(--admin-muted); cursor: pointer; font-size: 15px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s ease, color .15s ease;
+}
+.admin-modal-close:hover { background: var(--admin-border); color: var(--admin-ink); }
+
+/* The form is the flex column, so the fields scroll on a short screen
+   while the header and the actions row stay pinned. */
+.admin-modal-form { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.admin-modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 24px 4px; }
+.admin-modal-body > p { margin: 0 0 4px; font-size: 14px; line-height: 1.6; color: var(--admin-muted); }
+.admin-modal-actions {
+  display: flex; gap: 10px; flex-shrink: 0; padding: 16px 20px; background: var(--admin-card);
+}
+/* Only a scrolling body needs the separator. In a confirm dialog the actions
+   row sits straight under the header, whose own rule already draws it. */
+.admin-modal-body + .admin-modal-actions { border-top: 1px solid var(--admin-border); }
+.admin-modal-btn {
+  flex: 1; border-radius: 10px; padding: 11px 0; font-size: 13px; font-weight: 700;
+  font-family: inherit; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .12s ease;
+}
+.admin-modal-btn:active { transform: translateY(1px); }
+.admin-modal-btn-cancel { background: transparent; color: var(--admin-muted); border: 1.5px solid var(--admin-border); }
+.admin-modal-btn-cancel:hover { background: var(--admin-bg); border-color: var(--admin-muted); color: var(--admin-ink); }
+.admin-modal-btn-primary { background: var(--admin-accent); color: #fff; border: none; }
+.admin-modal-btn-primary:hover { background: var(--admin-accent-dark); }
+/* A deeper red than --admin-danger: white on #D64545 lands at ~4.0:1,
+   under the floor for 13px bold. Only solid danger buttons need it. */
+.admin-modal-btn-danger { background: var(--admin-danger-deep); color: #fff; border: none; }
+.admin-modal-btn-danger:hover { background: #A82F2F; }
+
+/* Image preview above the upload dropzone in the edit dialogs. */
+.admin-modal-thumb {
+  display: block; height: 72px; width: auto; max-width: 100%;
+  border-radius: 10px; border: 1.5px solid var(--admin-border); margin-bottom: 10px;
+}
+
+/* Keeps the page behind a modal from scrolling under it. */
+body.admin-modal-open { overflow: hidden; }
+
+@media (max-width: 560px) {
+  .admin-modal-backdrop { padding: 12px; }
+  .admin-modal-head { padding: 22px 40px 16px; }
+  .admin-modal-actions { flex-direction: column-reverse; }
+}
 
 .admin-pagination { margin-top: 4px; }
 .admin-pagination .pg-nav { width: 100%; }

@@ -4,16 +4,28 @@
 
 @if ($trips->isEmpty() && !auth()->user()?->userProfile)
 {{-- Empty state: brand-new user with no profile set up yet — matches the
-     other empty-state icon blocks' style/spacing exactly, no card wrapper. --}}
+     other empty-state icon blocks' style/spacing exactly, no card wrapper.
+     Skipping swaps in the same "no trips yet" prompt the branch below shows
+     once the profile exists, and holds across every tab. --}}
 <div class="empty-state-center" style="min-height:80vh;">
     <div style="width:64px;height:64px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
         <i class="fa-solid fa-house" style="font-size:28px;color:#fff;"></i>
     </div>
-    <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">Set up your profile first</h2>
-    <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Complete your travel profile before planning a trip and view trip statistics.</p>
-    <a href="{{ route('profile.setup') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
-        <i class="fa-solid fa-user"></i> Set Up Your Profile First
-    </a>
+    <div class="empty-state-swap" data-empty-when="profile">
+        <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">Set up your profile first</h2>
+        <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Complete your travel profile before planning a trip and view trip statistics.</p>
+        <a href="{{ route('profile.setup') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
+            <i class="fa-solid fa-user"></i> Set Up Your Profile First
+        </a>
+        <button type="button" class="empty-state-skip" onclick="budgetraSkipProfileSetup()">Skip this step</button>
+    </div>
+    <div class="empty-state-swap" data-empty-when="skipped">
+        <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">No trips yet</h2>
+        <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Plan a trip first to see your trip statistics.</p>
+        <a href="{{ route('trips.plan') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
+            <i class="fa-solid fa-plane"></i> Plan Your First Trip
+        </a>
+    </div>
 </div>
 @else
 
@@ -158,7 +170,7 @@
         @endphp
         <div>
             <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
-                <span style="font-size:13px;font-weight:600;color:var(--dark);">{{ $trip->trip_name ?? $trip->destination }}</span>
+                <span style="font-size:13px;font-weight:600;color:var(--dark);">{{ $trip->trip_name ?? place_with_country($trip->destination) }}</span>
                 <span style="font-size:12px;color:var(--muted);">{{ currency_symbol() }}{{ number_format($spent, 0) }} / {{ currency_symbol() }}{{ number_format($trip->budget_limit, 0) }}</span>
             </div>
             <div style="height:8px;background:var(--border-light);border-radius:99px;overflow:hidden;">

@@ -153,7 +153,10 @@
                     <a href="{{ route('profile.setup') }}?step=1&return=profile.edit" class="rv-edit">Edit</a>
                 </div>
                 <div style="font-size:15px;font-weight:700;color:var(--dark);">{{ $profile->home_city ?: '—' }}</div>
-                <div style="font-size:11px;color:var(--muted);">{{ $homeCountry ?: '—' }}</div>
+                {{-- PlaceCatalog knows every destination, not just the cities on
+                     the registration dropdown, so this resolves places the old
+                     controller-side loop returned nothing for. --}}
+                <div style="font-size:11px;color:var(--muted);">{{ \App\Support\PlaceCatalog::countryFor($profile->home_city) ?: '—' }}</div>
             </div>
 
             @php

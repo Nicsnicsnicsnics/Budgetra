@@ -110,23 +110,23 @@
 </div>{{-- /#usersTableWrap --}}
 
 <div id="deleteUserModal" class="admin-modal-backdrop" style="display:none;" onclick="if(event.target===this)closeDeleteUserModal();">
-    <div class="admin-modal-card">
+    <div class="admin-modal-card admin-modal-card-sm">
         <div class="admin-modal-head">
-            <h3>Delete User</h3>
-            <button type="button" class="admin-modal-close" onclick="closeDeleteUserModal();"><i class="fa-solid fa-xmark"></i></button>
-        </div>
-        <div style="padding:20px 24px;">
-            <p style="margin:0 0 20px;font-size:14px;color:var(--admin-muted, #8A7A6C);line-height:1.6;">
-                Delete <strong id="deleteUserName" style="color:var(--admin-ink, #241208);"></strong>? This cannot be undone — their trips, expenses, and other data will be permanently removed.
+            <div class="admin-modal-icon admin-modal-icon-danger"><i class="fa-solid fa-user-xmark"></i></div>
+            <h3 class="admin-modal-title">Delete User?</h3>
+            <p class="admin-modal-sub">
+                <strong id="deleteUserName"></strong> will be permanently removed, along with their trips,
+                expenses and other data.<br>This action cannot be undone.
             </p>
-            <form id="deleteUserForm" method="POST">
-                @csrf @method('DELETE')
-                <div class="admin-modal-actions">
-                    <button type="button" class="admin-btn admin-btn-outline" onclick="closeDeleteUserModal();">Cancel</button>
-                    <button type="submit" class="admin-btn admin-btn-primary" style="background:var(--admin-danger, #D64545);border-color:var(--admin-danger, #D64545);">Delete User</button>
-                </div>
-            </form>
+            <button type="button" class="admin-modal-close" aria-label="Close" onclick="closeDeleteUserModal();"><i class="fa-solid fa-xmark"></i></button>
         </div>
+        <form id="deleteUserForm" method="POST">
+            @csrf @method('DELETE')
+            <div class="admin-modal-actions">
+                <button type="button" class="admin-modal-btn admin-modal-btn-cancel" onclick="closeDeleteUserModal();">Cancel</button>
+                <button type="submit" class="admin-modal-btn admin-modal-btn-danger"><i class="fa-solid fa-trash"></i> Delete</button>
+            </div>
+        </form>
     </div>
 </div>
 

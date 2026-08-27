@@ -2485,7 +2485,12 @@ class LlmTest extends TestCase
         $this->assertStringContainsString('Would you like me to proceed', $lastMessage);
     }
 
-    public function test_autosave_draft_persists_destination_currency_and_budget_to_the_trip(): void
+    // destination_budget used to be asserted here too. It was a save-time
+    // snapshot (pesos ÷ whatever rate was live then) that nothing ever read
+    // back, and it went NULL whenever the lookup failed. Only the currency CODE
+    // is stored now; cards convert from it on demand, so the figure stays right
+    // as rates move. The peso budget remains the source of truth.
+    public function test_autosave_draft_persists_destination_currency_to_the_trip(): void
     {
         $user = User::factory()->create();
         Http::fake([
@@ -2506,6 +2511,6 @@ class LlmTest extends TestCase
         $trip = Trip::where('user_id', $user->id)->where('status', 'draft')->first();
         $this->assertNotNull($trip);
         $this->assertSame('JPY', $trip->destination_currency);
-        $this->assertEquals(118421.05, (float) $trip->destination_budget);
+        $this->assertEquals(45000, (float) $trip->budget_limit);
     }
 }

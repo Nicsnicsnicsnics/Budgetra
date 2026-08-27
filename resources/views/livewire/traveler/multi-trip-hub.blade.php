@@ -2,23 +2,31 @@
     @php $fmtDate = fn ($d, $f) => str_replace('Sep', 'Sept', $d->format($f)); @endphp
     @if ($trips->isEmpty() && !$search)
     {{-- Pure empty state — no header, no stats --}}
+    @php $mthNeedsProfile = ! auth()->user()?->userProfile; @endphp
     <div class="empty-state-center" style="min-height:80vh;">
         <div style="width:64px;height:64px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
             <i class="fa-solid fa-layer-group" style="font-size:28px;color:#fff;"></i>
         </div>
-        @if (!auth()->user()?->userProfile)
-        <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">Set up your profile first</h2>
-        <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Complete your travel profile before planning a trip and comparing trips.</p>
-        <a href="{{ route('profile.setup') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
-            <i class="fa-solid fa-user"></i> Set Up Your Profile First
-        </a>
-        @else
-        <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">No trips planned yet</h2>
-        <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Plan a trip first to view active and past trips, and compare trips.</p>
-        <a href="{{ route('trips.plan') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
-            <i class="fa-solid fa-plane"></i> Plan Your First Trip
-        </a>
+        @if ($mthNeedsProfile)
+        <div class="empty-state-swap" data-empty-when="profile">
+            <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">Set up your profile first</h2>
+            <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Complete your travel profile before planning a trip and comparing trips.</p>
+            <a href="{{ route('profile.setup') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
+                <i class="fa-solid fa-user"></i> Set Up Your Profile First
+            </a>
+            {{-- Swaps in the "plan a trip" prompt below — on every tab, and for
+                 good, until the profile is actually created. See
+                 budgetraSkipProfileSetup() in layouts/app.blade.php. --}}
+            <button type="button" class="empty-state-skip" onclick="budgetraSkipProfileSetup()">Skip this step</button>
+        </div>
         @endif
+        <div class="empty-state-swap" @if ($mthNeedsProfile) data-empty-when="skipped" @endif>
+            <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">No trips planned yet</h2>
+            <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Plan a trip first to view active and past trips, and compare trips.</p>
+            <a href="{{ route('trips.plan') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
+                <i class="fa-solid fa-plane"></i> Plan Your First Trip
+            </a>
+        </div>
     </div>
     @else
 
@@ -119,9 +127,16 @@
 
                         {{-- Trip info overlay --}}
                         <div style="position:absolute;bottom:12px;left:16px;right:16px;">
-                            <div style="font-size:19px;font-weight:700;color:#fff;line-height:1.3;margin-bottom:8px;">
+                            <div style="font-size:19px;font-weight:700;color:#fff;line-height:1.3;margin-bottom:2px;">
                                 {{ $trip->trip_name ?? $trip->destination }}
                             </div>
+                            {{-- A multi-city trip_name spans two places, so no
+                                 single country applies to it. --}}
+                            @if (!$trip->is_multi_city && ($mthCountry = \App\Support\PlaceCatalog::countryFor($trip->destination)))
+                            <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.82);margin-bottom:8px;">{{ $mthCountry }}</div>
+                            @else
+                            <div style="margin-bottom:8px;"></div>
+                            @endif
                             <div style="display:flex;flex-direction:column;gap:5px;">
                                 <div style="display:flex;align-items:center;gap:14px;font-size:12px;color:rgba(255,255,255,0.9);flex-wrap:wrap;">
                                     <span style="display:flex;align-items:center;gap:6px;"><i class="fa-solid fa-plane" style="font-size:11px;color:#F5C97A;"></i>{{ $trip->origin_code ?? 'MNL' }} to {{ $trip->destination_code ?? '—' }}</span>
@@ -190,7 +205,7 @@
         <div style="background:var(--bg-white);border-radius:20px;max-width:480px;width:100%;max-height:90vh;overflow-y:auto;padding:28px;">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
                 <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-                    <h2 style="margin:0;">{{ $dt->trip_name ?? $dt->destination }}</h2>
+                    <h2 style="margin:0;">{{ $dt->is_multi_city ? ($dt->trip_name ?? $dt->destination) : place_with_country($dt->trip_name ?? $dt->destination) }}</h2>
                     <span style="background:#EFF6FF;color:#1D4ED8;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;text-transform:uppercase;white-space:nowrap;">{{ $dt->status }}</span>
                 </div>
                 <button wire:click="closeDetail" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);line-height:1;">&times;</button>

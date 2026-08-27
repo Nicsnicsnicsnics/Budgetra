@@ -4,7 +4,9 @@ namespace Tests\Feature\Livewire;
 use App\Livewire\Traveler\ProfileBuilder;
 use App\Models\User;
 use App\Models\UserProfile;
+use App\Services\CurrencyConverterService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -109,25 +111,34 @@ class ProfileBuilderTest extends TestCase
         $this->assertNull($profile->daily_budget_local);
     }
 
-    // No fallback rate table (matching the rest of the app's no-hardcode
-    // policy) — if the live rate can't be fetched, the raw number is kept
-    // as-is rather than silently converted using a guess.
-    public function test_confirm_profile_keeps_the_raw_number_when_twelvedata_is_unavailable(): void
+    // No hardcoded rates: if the live rate can't be fetched there is nothing
+    // honest to store, so the save is refused and the traveller is told.
+    //
+    // This replaces an earlier test that asserted the raw number was kept as-is
+    // (daily_budget = 50000.0, currency null). That assertion described the bug
+    // rather than the policy: ¥50,000 sat in a peso column marked as pesos,
+    // silently wrong by the whole exchange rate, with the currency discarded so
+    // it could never be corrected. Refusing honours "don't guess" without
+    // writing a number the app will read as pesos.
+    public function test_confirm_profile_refuses_to_save_when_no_rate_is_available(): void
     {
         $user = User::factory()->create(['country' => 'Japan']);
         Http::fake([
             'api.twelvedata.com/*' => Http::response(['message' => 'Unauthorized'], 401),
         ]);
 
-        Livewire::actingAs($user)->test(ProfileBuilder::class)
+        $component = Livewire::actingAs($user)->test(ProfileBuilder::class)
             ->set('homeCity', 'Tokyo')
             ->set('dailyBudget', 50000)
             ->call('confirmProfile');
 
-        $profile = UserProfile::where('user_id', $user->id)->first();
-        $this->assertSame(50000.0, $profile->daily_budget);
-        $this->assertNull($profile->daily_budget_currency);
-        $this->assertNull($profile->daily_budget_local);
+        // Told, not silently mis-saved — and kept on the page rather than
+        // redirected away as though it had worked.
+        $component->assertSet('saveError', fn ($e) => is_string($e) && $e !== '');
+        $component->assertNoRedirect();
+
+        // Nothing written at all beats a yen figure recorded as pesos.
+        $this->assertNull(UserProfile::where('user_id', $user->id)->first());
     }
 
     public function test_review_screen_shows_the_currency_symbol_matching_the_home_city(): void
@@ -198,4 +209,69 @@ class ProfileBuilderTest extends TestCase
         $this->assertEqualsWithDelta(22247.23, $profile->daily_budget, 0.5);
         $this->assertEqualsWithDelta(500.0, $profile->daily_budget_local, 0.5);
     }
+
+    public function test_clearing_the_home_city_stays_cleared(): void
+    {
+        $user = User::factory()->create();
+
+        // The field used to refill itself a second or two after being cleared:
+        // Alpine held its own copy of homeCity alongside the Livewire property,
+        // and a re-render resolved the disagreement in favour of the stale one.
+        Livewire::actingAs($user)->test(ProfileBuilder::class)
+            ->set('homeCity', 'Cebu City')
+            ->set('homeCity', '')
+            ->assertSet('homeCity', '')
+            ->call('nextStep')
+            ->assertSet('step', 1)          // an empty city must not advance
+            ->assertSet('homeCity', '');    // and must not come back
+    }
+
+    public function test_step_indicator_has_a_connector_between_every_step(): void
+    {
+        $user = User::factory()->create();
+
+        $html = Livewire::actingAs($user)->test(ProfileBuilder::class)->html();
+
+        $dots       = substr_count($html, 'width:32px;height:32px;border-radius:50%');
+        $connectors = substr_count($html, 'flex:1;height:3px;background:');
+
+        // 7 dots need 6 connectors. It rendered 5, so 6 and 7 sat flush.
+        $this->assertSame(7, $dots);
+        $this->assertSame(6, $connectors);
+    }
+
+    // A provider outage used to rewrite a correct peso budget with the raw
+    // foreign number and erase the currency metadata needed to recover it.
+    public function test_a_rate_outage_does_not_overwrite_an_already_converted_budget(): void
+    {
+        $user = User::factory()->create(['country' => 'Canada']);
+
+        Http::fakeSequence('api.twelvedata.com/*')
+            ->push(['rate' => 44.49445], 200)
+            ->pushStatus(500)->pushStatus(500)->pushStatus(500);
+
+        Livewire::actingAs($user)->test(ProfileBuilder::class)
+            ->set('homeCity', 'Vancouver')
+            ->set('dailyBudget', 500)
+            ->call('confirmProfile');
+
+        // Both layers, or the second save silently reuses the rate the first one
+        // fetched and this stops testing an outage at all.
+        Cache::flush();
+        CurrencyConverterService::forgetMemo();
+        $this->assertNull((new CurrencyConverterService())->rateToPhp('CAD'),
+            'guard: the provider must really be failing for this test to mean anything');
+        CurrencyConverterService::forgetMemo();
+        Cache::flush();
+
+        Livewire::actingAs(User::find($user->id))->test(ProfileBuilder::class)
+            ->call('confirmProfile');
+
+        $profile = UserProfile::where('user_id', $user->id)->first();
+
+        $this->assertSame('CAD', $profile->daily_budget_currency);
+        $this->assertEqualsWithDelta(500.0, $profile->daily_budget_local, 0.5);
+        $this->assertEqualsWithDelta(22247.23, $profile->daily_budget, 0.5);
+    }
+
 }

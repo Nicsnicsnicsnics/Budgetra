@@ -7,7 +7,11 @@ use Illuminate\Support\Facades\Http;
 
 class OcrService
 {
-    public function scan(UploadedFile $file, int $userId): array
+    /**
+     * @param string|null $destinationCurrency the trip's currency, used only to
+     *        disambiguate a scanned symbol that more than one currency shares.
+     */
+    public function scan(UploadedFile $file, int $userId, ?string $destinationCurrency = null): array
     {
         // This only ever needs the file's BYTES for the API call below, not
         // a permanent copy — storing it here (as this used to) created a
@@ -26,7 +30,7 @@ class OcrService
                 'status'        => 'failed',
                 'error_message' => 'OCR API key not configured.',
             ]);
-            return ['amount' => null, 'date' => null, 'description' => null, 'category' => null, 'confidence' => 0];
+            return ['amount' => null, 'date' => null, 'description' => null, 'category' => null, 'currency' => null, 'confidence' => 0];
         }
 
         $imageContent = file_get_contents($file->getRealPath());
@@ -63,7 +67,7 @@ class OcrService
                 'status'        => 'failed',
                 'error_message' => 'OCR request failed: ' . $e->getMessage(),
             ]);
-            return ['amount' => null, 'date' => null, 'description' => null, 'category' => null, 'confidence' => 0];
+            return ['amount' => null, 'date' => null, 'description' => null, 'category' => null, 'currency' => null, 'confidence' => 0];
         }
 
         if (!$response->successful() || ($response->json('OCRExitCode') ?? 0) < 1) {
@@ -73,7 +77,7 @@ class OcrService
                 'status'        => 'failed',
                 'error_message' => 'OCR API error: ' . $response->status(),
             ]);
-            return ['amount' => null, 'date' => null, 'description' => null, 'category' => null, 'confidence' => 0];
+            return ['amount' => null, 'date' => null, 'description' => null, 'category' => null, 'currency' => null, 'confidence' => 0];
         }
 
         $text       = $response->json('ParsedResults.0.ParsedText', '');
@@ -104,6 +108,12 @@ class OcrService
             'status'     => $parsed['amount'] ? 'success' : 'partial',
             'confidence' => $confidence,
         ]);
+
+        // Resolve the scanned symbol against the trip this receipt belongs to, so
+        // '¥' on a Japan trip is yen rather than a guess between yen and yuan.
+        $parsed['currency'] = ($parsed['currencyCode'] ?? null)
+            ?: self::currencyFromSymbol($parsed['symbol'] ?? null, $destinationCurrency);
+        unset($parsed['symbol'], $parsed['currencyCode']);
 
         return array_merge($parsed, ['confidence' => $confidence]);
     }
@@ -185,9 +195,72 @@ class OcrService
         return null;
     }
 
+    /**
+     * Receipt symbols that map to exactly one currency. '¥' (JPY/CNY) and 'kr'
+     * (DKK/NOK/SEK) are deliberately absent — they're ambiguous, and are resolved
+     * against the trip's own destination currency in currencyFromSymbol().
+     */
+    private const UNAMBIGUOUS_SYMBOLS = [
+        '₱' => 'PHP', '$' => 'USD', '€' => 'EUR', '£' => 'GBP',
+        '₩' => 'KRW', '₫' => 'VND', '฿' => 'THB',
+    ];
+
+    /** Symbols shared by more than one currency, and who can claim them. */
+    private const AMBIGUOUS_SYMBOLS = [
+        '¥' => ['JPY', 'CNY'],
+    ];
+
+    /**
+     * The currency a scanned symbol means, given where the trip is going.
+     *
+     * A '¥' on a Japan trip is yen and on a China trip is yuan; the destination
+     * is the only thing on hand that can tell them apart, and it's exactly right
+     * for a receipt collected on that trip. With no destination to go on, an
+     * ambiguous symbol resolves to nothing rather than to a coin flip.
+     */
+    public static function currencyFromSymbol(?string $symbol, ?string $destinationCurrency): ?string
+    {
+        if ($symbol === null || $symbol === '') return null;
+
+        if (isset(self::UNAMBIGUOUS_SYMBOLS[$symbol])) {
+            return self::UNAMBIGUOUS_SYMBOLS[$symbol];
+        }
+
+        $candidates = self::AMBIGUOUS_SYMBOLS[$symbol] ?? null;
+        if ($candidates === null) return null;
+
+        return in_array($destinationCurrency, $candidates, true) ? $destinationCurrency : null;
+    }
+
+    /**
+     * The largest amount among the matches, plus the symbol printed against that
+     * particular one — max() alone would lose track of which match it came from.
+     *
+     * @return array{0: float|null, 1: string|null}
+     */
+    private function largestWithSymbol(array $sets, int $amountGroup, int $symbolGroup): array
+    {
+        $best = null;
+        $bestSymbol = null;
+
+        foreach ($sets as $set) {
+            if (!isset($set[$amountGroup])) continue;
+
+            $value = (float) str_replace(',', '', $set[$amountGroup]);
+            if ($best === null || $value > $best) {
+                $best = $value;
+                $bestSymbol = ($set[$symbolGroup] ?? '') !== '' ? $set[$symbolGroup] : null;
+            }
+        }
+
+        return [$best, $bestSymbol];
+    }
+
     private function parseReceiptText(string $text): array
     {
         $amount = $date = $description = null;
+        $symbol = null;
+        $currencyCode = null;
 
         // Real receipts print Subtotal, then Tax, then Total, in that
         // reading order, and a bare "TOTAL" pattern also matches inside
@@ -209,10 +282,29 @@ class OcrService
         // OCR garbles surrounding foreign-script text around it, so this
         // helps regardless of whether the "TOTAL"-style keyword above
         // matched (which only recognizes English/French/Spanish wording).
-        if (preg_match_all('/(?:GRAND\s*TOTAL|SUB\s*TOTAL|SUBTOTAL|TOTAL|AMOUNT\s*DUE|DUE|AMOUNT)[:\s]*[₱$¥€£₩₫฿]?\s*([\d,]+\.?\d{0,2})/iu', $text, $matches) && !empty($matches[1])) {
-            $amount = max(array_map(fn ($v) => (float) str_replace(',', '', $v), $matches[1]));
-        } elseif (preg_match_all('/[₱$¥€£₩₫฿]\s*([\d,]+\.?\d{0,2})/u', $text, $matches) && !empty($matches[1])) {
-            $amount = max(array_map(fn ($v) => (float) str_replace(',', '', $v), $matches[1]));
+        //
+        // The symbol is CAPTURED now, not just tolerated. It was matched and then
+        // dropped, so a ¥3,500 Tokyo lunch was recorded as ₱3,500 — the real cost
+        // is about ₱1,360, and the inflated figure fed straight into budget alerts.
+        if (preg_match_all('/(?:GRAND\s*TOTAL|SUB\s*TOTAL|SUBTOTAL|TOTAL|AMOUNT\s*DUE|DUE|AMOUNT)[:\s]*([₱$¥€£₩₫฿])?\s*([\d,]+\.?\d{0,2})/iu', $text, $matches, PREG_SET_ORDER) && !empty($matches)) {
+            [$amount, $symbol] = $this->largestWithSymbol($matches, 2, 1);
+        } elseif (preg_match_all('/([₱$¥€£₩₫฿])\s*([\d,]+\.?\d{0,2})/u', $text, $matches, PREG_SET_ORDER) && !empty($matches)) {
+            [$amount, $symbol] = $this->largestWithSymbol($matches, 2, 1);
+        }
+
+        // Only eight currencies have a glyph this recognises. The rest — CHF, SEK,
+        // AED, TWD and so on — print their ISO code instead, so read that too and
+        // the scan works for every destination rather than a handful of them. A
+        // literal code is unambiguous, so it outranks any glyph found above.
+        $codes = implode('|', array_keys(\App\Support\PlaceCatalog::CURRENCY_SYMBOLS));
+        if (preg_match_all('/(' . $codes . ')[:\s]*([\d,]+\.?\d{0,2})/u', $text, $codeMatches, PREG_SET_ORDER) && !empty($codeMatches)) {
+            [$codeAmount, $codeFound] = $this->largestWithSymbol($codeMatches, 2, 1);
+            if ($codeFound !== null) {
+                $currencyCode = strtoupper($codeFound);
+                // Keep the keyword-anchored total if we found one; a bare code
+                // line is a weaker signal for the AMOUNT than "TOTAL: ..." is.
+                $amount ??= $codeAmount;
+            }
         }
 
         if (preg_match('/(\d{4}-\d{2}-\d{2})/', $text, $m)) {
@@ -224,6 +316,9 @@ class OcrService
         $lines       = array_filter(array_map('trim', explode("\n", $text)));
         $description = reset($lines) ?: null;
 
-        return compact('amount', 'date', 'description');
+        // The raw symbol travels out with the amount; scan() turns it into a
+        // currency code once it knows which trip the receipt belongs to. A code
+        // printed literally on the receipt needs no such disambiguation.
+        return compact('amount', 'date', 'description', 'symbol', 'currencyCode');
     }
 }

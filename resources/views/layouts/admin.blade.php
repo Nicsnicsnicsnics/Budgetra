@@ -28,6 +28,44 @@
             </div>
         </div>
     </div>
+    {{-- Shared dialog behaviour. Every admin modal is a .admin-modal-backdrop
+         that its own page shows and hides by flipping display, so rather than
+         teach each page about Escape and scroll locking, watch the backdrops
+         from here: Escape closes whatever is on top, and the page behind an
+         open dialog is frozen so it can't scroll under it. --}}
+    <script>
+        (function () {
+            function openBackdrops() {
+                return Array.prototype.filter.call(
+                    document.querySelectorAll('.admin-modal-backdrop'),
+                    // Not offsetParent: these are position:fixed, so that is
+                    // null whether they are open or not.
+                    function (el) { return getComputedStyle(el).display !== 'none'; }
+                );
+            }
+
+            function syncScrollLock() {
+                document.body.classList.toggle('admin-modal-open', openBackdrops().length > 0);
+            }
+
+            document.addEventListener('keydown', function (e) {
+                if (e.key !== 'Escape') return;
+                var open = openBackdrops();
+                if (!open.length) return;
+                // Last one in the DOM is the one drawn on top.
+                open[open.length - 1].style.display = 'none';
+                syncScrollLock();
+            });
+
+            // The pages set display straight on the element rather than
+            // firing an event, so an attribute observer is what actually
+            // catches an open or a close.
+            var observer = new MutationObserver(syncScrollLock);
+            document.querySelectorAll('.admin-modal-backdrop').forEach(function (el) {
+                observer.observe(el, { attributes: true, attributeFilter: ['style', 'class'] });
+            });
+        })();
+    </script>
     @livewireScripts
 </body>
 </html>

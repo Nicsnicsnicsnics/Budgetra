@@ -55,7 +55,7 @@
                 @foreach ($trips as $trip)
                 <option value="{{ $trip->id }}"
                     {{ old('trip_id', $goal->trip_id) == $trip->id ? 'selected' : '' }}>
-                    {{ $trip->destination }} ({{ $trip->start_date->format('M Y') }})
+                    {{ place_with_country($trip->destination) }} ({{ $trip->start_date->format('M Y') }})
                 </option>
                 @endforeach
             </select>

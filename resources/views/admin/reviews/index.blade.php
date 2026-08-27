@@ -57,23 +57,22 @@
 <div class="admin-pagination">{{ $reviews->links() }}</div>
 
 <div id="deleteReviewModal" class="admin-modal-backdrop" style="display:none;" onclick="if(event.target===this)closeDeleteReviewModal();">
-    <div class="admin-modal-card">
+    <div class="admin-modal-card admin-modal-card-sm">
         <div class="admin-modal-head">
-            <h3>Delete Review</h3>
-            <button type="button" class="admin-modal-close" onclick="closeDeleteReviewModal();"><i class="fa-solid fa-xmark"></i></button>
-        </div>
-        <div style="padding:20px 24px;">
-            <p style="margin:0 0 20px;font-size:14px;color:var(--admin-muted, #8A7A6C);line-height:1.6;">
-                Delete the review "<strong id="deleteReviewName" style="color:var(--admin-ink, #241208);"></strong>"? This cannot be undone.
+            <div class="admin-modal-icon admin-modal-icon-danger"><i class="fa-solid fa-trash-can"></i></div>
+            <h3 class="admin-modal-title">Delete Review?</h3>
+            <p class="admin-modal-sub">
+                The review <strong id="deleteReviewName"></strong> will be permanently removed.<br>This action cannot be undone.
             </p>
-            <form id="deleteReviewForm" method="POST">
-                @csrf @method('DELETE')
-                <div class="admin-modal-actions">
-                    <button type="button" class="admin-btn admin-btn-outline" onclick="closeDeleteReviewModal();">Cancel</button>
-                    <button type="submit" class="admin-btn admin-btn-primary" style="background:var(--admin-danger, #D64545);border-color:var(--admin-danger, #D64545);">Delete Review</button>
-                </div>
-            </form>
+            <button type="button" class="admin-modal-close" aria-label="Close" onclick="closeDeleteReviewModal();"><i class="fa-solid fa-xmark"></i></button>
         </div>
+        <form id="deleteReviewForm" method="POST">
+            @csrf @method('DELETE')
+            <div class="admin-modal-actions">
+                <button type="button" class="admin-modal-btn admin-modal-btn-cancel" onclick="closeDeleteReviewModal();">Cancel</button>
+                <button type="submit" class="admin-modal-btn admin-modal-btn-danger"><i class="fa-solid fa-trash"></i> Delete</button>
+            </div>
+        </form>
     </div>
 </div>
 

@@ -43,25 +43,33 @@
     {{-- && !$search — a search that matches nothing is not the same as having
          no trips at all, and must not offer "Plan Your First Trip". --}}
     @if ($trips->isEmpty() && !$search)
+    @php $stNeedsProfile = ! auth()->user()?->userProfile; @endphp
     <div class="empty-state-center" style="min-height:80vh;">
         <div style="width:64px;height:64px;border-radius:18px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
             <i class="fa-solid fa-suitcase-rolling" style="font-size:28px;color:#fff;"></i>
         </div>
-        @if (!auth()->user()?->userProfile)
-        <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">Set up your profile first</h2>
-        <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Complete your travel profile before planning a trip and view your active, draft, and past trips.</p>
-        <a href="{{ route('profile.setup') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;transition:background .18s;"
-           onmouseenter="this.style.background='var(--primary-dark)'" onmouseleave="this.style.background='var(--primary)'">
-            <i class="fa-solid fa-user"></i> Set Up Your Profile First
-        </a>
-        @else
-        <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">No saved trips yet</h2>
-        <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Plan a trip first to see your saved and draft trips.</p>
-        <a href="{{ route('trips.plan') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;transition:background .18s;"
-           onmouseenter="this.style.background='var(--primary-dark)'" onmouseleave="this.style.background='var(--primary)'">
-            <i class="fa-solid fa-plane"></i> Plan Your First Trip
-        </a>
+        @if ($stNeedsProfile)
+        <div class="empty-state-swap" data-empty-when="profile">
+            <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">Set up your profile first</h2>
+            <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Complete your travel profile before planning a trip and view your active, draft, and past trips.</p>
+            <a href="{{ route('profile.setup') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;transition:background .18s;"
+               onmouseenter="this.style.background='var(--primary-dark)'" onmouseleave="this.style.background='var(--primary)'">
+                <i class="fa-solid fa-user"></i> Set Up Your Profile First
+            </a>
+            {{-- Swaps in the "plan a trip" prompt below — on every tab, and for
+                 good, until the profile is actually created. See
+                 budgetraSkipProfileSetup() in layouts/app.blade.php. --}}
+            <button type="button" class="empty-state-skip" onclick="budgetraSkipProfileSetup()">Skip this step</button>
+        </div>
         @endif
+        <div class="empty-state-swap" @if ($stNeedsProfile) data-empty-when="skipped" @endif>
+            <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">No saved trips yet</h2>
+            <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Plan a trip first to see your saved and draft trips.</p>
+            <a href="{{ route('trips.plan') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;transition:background .18s;"
+               onmouseenter="this.style.background='var(--primary-dark)'" onmouseleave="this.style.background='var(--primary)'">
+                <i class="fa-solid fa-plane"></i> Plan Your First Trip
+            </a>
+        </div>
     </div>
     @else
     @php
@@ -211,9 +219,20 @@
                     <i class="fa-solid fa-file-arrow-down" style="font-size:13px;"></i>
                 </a>
                 <div style="position:absolute;bottom:12px;left:16px;right:16px;">
-                    <div style="font-size:19px;font-weight:700;color:#fff;line-height:1.3;margin-bottom:8px;">
+                    <div style="font-size:19px;font-weight:700;color:#fff;line-height:1.3;margin-bottom:2px;">
                         {{ $dest }}
                     </div>
+                    {{-- Country under the card title. Skipped for a multi-city
+                         trip, whose $dest is a combined "A & B" name that no
+                         single country belongs to, and for a draft with no
+                         destination set yet. --}}
+                    @if (!$trip->is_multi_city && ($destCountry = \App\Support\PlaceCatalog::countryFor($trip->destination)))
+                    <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.82);margin-bottom:8px;">
+                        {{ $destCountry }}
+                    </div>
+                    @else
+                    <div style="margin-bottom:8px;"></div>
+                    @endif
                     @php
                         $leg2From = $trip->is_multi_city && $trip->leg2_destination ? $toCode : null;
                         $leg2To   = $trip->is_multi_city && $trip->leg2_destination ? ($trip->leg2_destination_code ?? '') : null;

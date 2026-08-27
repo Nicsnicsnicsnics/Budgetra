@@ -8,7 +8,7 @@
         <div class="card-body">
             <div style="display:flex;justify-content:space-between;align-items:center;">
                 <div>
-                    <h3>{{ $trip->destination }}</h3>
+                    <h3>{{ place_with_country($trip->destination) }}</h3>
                     <p>{{ $trip->start_date }} &rarr; {{ $trip->end_date }}</p>
                     <p>
                         Estimated: <strong>&#8369;{{ number_format($s['total_estimated'], 2) }}</strong> &bull;

@@ -18,6 +18,9 @@
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;" class="mb-16">
         <div>
             <h1>{{ $trip->destination }}</h1>
+            @if ($country = \App\Support\PlaceCatalog::countryFor($trip->destination))
+            <p class="text-muted" style="margin-bottom:2px;">{{ $country }}</p>
+            @endif
             <p class="text-muted">{{ $trip->start_date->format('M j') }} – {{ $trip->end_date->format('M j, Y') }} · {{ $this->days }} days</p>
         </div>
         <a href="{{ route('trips.index') }}" class="btn btn-outline btn-sm">← All Trips</a>

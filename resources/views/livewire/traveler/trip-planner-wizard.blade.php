@@ -8,32 +8,12 @@
 ═══════════════════════════════════════════════════════════════ --}}
 @if ($planningMode !== '' && $step === 1)
 @php
-$localCities = [
-    ['name'=>'Manila','code'=>'MNL'],['name'=>'Cebu City','code'=>'CEB'],['name'=>'Davao City','code'=>'DVO'],
-    ['name'=>'Boracay','code'=>'KLO'],['name'=>'Puerto Princesa','code'=>'PPS'],['name'=>'Tagbilaran','code'=>'TAG'],
-    ['name'=>'Siargao','code'=>'IAO'],['name'=>'Iloilo City','code'=>'ILO'],['name'=>'Bacolod','code'=>'BCD'],
-    ['name'=>'Zamboanga','code'=>'ZAM'],['name'=>'Cagayan de Oro','code'=>'CGY'],['name'=>'General Santos','code'=>'GES'],
-    ['name'=>'Tacloban','code'=>'TAC'],['name'=>'Dumaguete','code'=>'DGT'],['name'=>'El Nido','code'=>'ENI'],
-    ['name'=>'Coron','code'=>'USU'],['name'=>'Baguio','code'=>'BAG'],['name'=>'Tagaytay','code'=>'MNL'],
-    ['name'=>'Vigan','code'=>'VIG'],['name'=>'Batanes','code'=>'BSO'],['name'=>'Camiguin','code'=>'CGM'],
-    ['name'=>'Siquijor','code'=>'DGT'],['name'=>'Surigao','code'=>'SUG'],['name'=>'Laoag','code'=>'LAO'],
-    ['name'=>'Legazpi','code'=>'LGP'],
-];
-$intlCities = [
-    ['name'=>'Singapore','code'=>'SIN'],['name'=>'Bangkok','code'=>'BKK'],['name'=>'Bali','code'=>'DPS'],
-    ['name'=>'Tokyo','code'=>'NRT'],['name'=>'Seoul','code'=>'ICN'],['name'=>'Kuala Lumpur','code'=>'KUL'],
-    ['name'=>'Hong Kong','code'=>'HKG'],['name'=>'Dubai','code'=>'DXB'],['name'=>'London','code'=>'LHR'],
-    ['name'=>'Paris','code'=>'CDG'],['name'=>'New York','code'=>'JFK'],['name'=>'Sydney','code'=>'SYD'],
-    ['name'=>'Osaka','code'=>'KIX'],['name'=>'Taipei','code'=>'TPE'],['name'=>'Rome','code'=>'FCO'],
-    ['name'=>'Barcelona','code'=>'BCN'],['name'=>'Amsterdam','code'=>'AMS'],['name'=>'Maldives','code'=>'MLE'],
-    ['name'=>'Phuket','code'=>'HKT'],['name'=>'Ho Chi Minh City','code'=>'SGN'],['name'=>'Hanoi','code'=>'HAN'],
-    ['name'=>'Doha','code'=>'DOH'],['name'=>'Istanbul','code'=>'IST'],['name'=>'Toronto','code'=>'YYZ'],
-    ['name'=>'Los Angeles','code'=>'LAX'],
-];
-$allCities = array_merge(
-    array_map(fn($c)=>array_merge($c,['group'=>'Local']),$localCities),
-    array_map(fn($c)=>array_merge($c,['group'=>'International']),$intlCities)
-);
+// Built from the traveller's registration country: "Local" means THEIR
+// country, not the Philippines. This was two hardcoded copies of a Philippine
+// city list, so a Canadian was asked which Philippine city they were leaving
+// from. See PlaceCatalog::cityOptionsFor().
+$allCities = \App\Support\PlaceCatalog::cityOptionsFor(auth()->user()?->country);
+$originCountryLabel = \App\Support\PlaceCatalog::originCountryFor(auth()->user()?->country);
 @endphp
 
 <style>
@@ -139,9 +119,11 @@ $allCities = array_merge(
                     <div class="city-drop" x-show="activeDrop==='from'" @click.outside="activeDrop=''" x-cloak>
                         <div class="city-search"><input type="text" x-model="fromSearch" placeholder="Select city" x-ref="fromSearch"></div>
                         <div class="city-list">
-                            <template x-for="grp in ['Local','International']" :key="grp">
+                            <template x-for="grp in originGroups" :key="grp">
                                 <div>
-                                    <div class="city-group-label" x-text="grp + ' Destinations'"></div>
+                                    {{-- Names the country rather than saying "Local", which
+                                         reads as filler once it is the only group here. --}}
+                                    <div class="city-group-label">{{ $originCountryLabel }}</div>
                                     <template x-for="c in filteredCities('from',grp)" :key="c.code+c.name">
                                         <div class="city-item" @click="selectCity('from',c)">
                                             <span class="code" x-text="c.code"></span><span x-text="c.name"></span>
@@ -194,10 +176,20 @@ $allCities = array_merge(
             </div>
 
             {{-- BUDGET --}}
+            @php
+                // The traveller's own currency, from the country they registered
+                // with. The field used to carry no currency at all and silently
+                // mean pesos, so a Canadian typing 3,000 got a ₱3,000 trip.
+                $budCurrencyCode   = $this->budgetCurrency();
+                $budCurrencySymbol = $this->budgetCurrencySymbol();
+            @endphp
             <div style="margin-bottom:18px;">
-                <div class="pyt-label">Preferred Budget Range (must not exceed 7 digits)</div>
+                <div class="pyt-label">
+                    Preferred Budget Range in {{ $budCurrencyCode }}
+                </div>
                 <div class="pyt-field" :class="{ 'is-bad': bad.budget }" style="cursor:default;display:flex;align-items:center;gap:12px;">
                     <div class="pyt-icon" style="background:#E6F5EC;"><i class="fa-solid fa-money-bill-wave" style="color:#22A06B;font-size:14px;"></i></div>
+                    <span style="font-size:16px;font-weight:700;color:var(--muted);flex-shrink:0;">{{ $budCurrencySymbol }}</span>
                     {{-- wire:ignore for the same reason as the label spans: this
                          input is uncontrolled (seeded by x-init, then owned by
                          the traveler), and letting Livewire morph it re-ran that
@@ -210,7 +202,13 @@ $allCities = array_merge(
                            class="pyt-budget-input"
                            x-ref="budgetInput"
                            @input="
-                               const fmt = p => { const n = p.trim().replace(/[^0-9]/g,'').slice(0,7); return n ? parseInt(n).toLocaleString('en-PH') : ''; };
+                               {{-- Grouping only; the currency is shown by the symbol beside the field.
+                                    12 digits, not 7. A seven-digit cap was generous while this
+                                    field held pesos, but it holds the traveller's own currency
+                                    now — and it caps a dong budget at about ₱24,000 and a rupiah
+                                    one at ₱35,000, silently rewriting anything longer. The real
+                                    ceiling is the peso column, enforced in saveItinerary(). --}}
+                               const fmt = p => { const n = p.trim().replace(/[^0-9]/g,'').slice(0,12); return n ? parseInt(n).toLocaleString('en-US') : ''; };
                                const raw = $el.value; const parts = raw.split('-');
                                $el.value = parts.length===2 ? fmt(parts[0])+' - '+fmt(parts[1]) : fmt(parts[0]);
                                if ($el.value) bad.budget = false;
@@ -333,6 +331,9 @@ window.pytManual = function (seed) {
         activeCal: '',
         fromLabel:  seed.fromLabel  || '',
         toLabel:    seed.toLabel    || '',
+        // You depart from where you live, so the origin picker offers only
+        // the traveller's own country. Destinations still span both groups.
+        originGroups: ['Local'],
         fromSearch: '',
         toSearch:   '',
         budgetFilled: seed.budgetFilled === true,
@@ -340,8 +341,20 @@ window.pytManual = function (seed) {
         endLabel:   seed.endLabel   || '',
         startVal:   seed.startVal   || '',
         endVal:     seed.endVal     || '',
-        startYear: now.getFullYear(), startMonth: now.getMonth()+1,
-        endYear:   now.getFullYear(), endMonth:   now.getMonth()+1,
+        // Opening on the current month means opening on a grid that is mostly
+        // greyed out near month-end — on the 28th of a 31-day month only four
+        // days are pickable, which reads as a broken picker. Start on the next
+        // month when this one has almost nothing left; the traveller can always
+        // page back, and the remaining days stay selectable there.
+        ...(function () {
+            const y = now.getFullYear(), m = now.getMonth() + 1;
+            const daysLeft = new Date(y, m, 0).getDate() - now.getDate() + 1;
+            const roomy = daysLeft >= 7 ? { y, m } : (m === 12 ? { y: y + 1, m: 1 } : { y, m: m + 1 });
+            return {
+                startYear: roomy.y, startMonth: roomy.m,
+                endYear:   roomy.y, endMonth:   roomy.m,
+            };
+        })(),
         startCells: [],
         endCells: [],
 
@@ -510,6 +523,10 @@ window.pytManual = function (seed) {
             if (which === 'start') {
                 this.startVal = val; this.startLabel = label;
                 if (this.endVal && this.endVal < val) { this.endVal = ''; this.endLabel = ''; $wire.set('endDate', ''); }
+                // Move the end calendar to the start's month. Everything before
+                // the start date is disabled, so leaving it on an earlier month
+                // would open it fully greyed out.
+                if (!this.endVal) { this.endYear = y; this.endMonth = m; }
             } else {
                 this.endVal = val; this.endLabel = label;
                 if (this.startVal && this.startVal > val) { this.startVal = ''; this.startLabel = ''; $wire.set('startDate', ''); }
@@ -580,32 +597,12 @@ window.pytManual = function (seed) {
 ═══════════════════════════════════════════════════════════════ --}}
 @if ($planningMode !== '' && $step === 2)
 @php
-$localCities2 = [
-    ['name'=>'Manila','code'=>'MNL'],['name'=>'Cebu City','code'=>'CEB'],['name'=>'Davao City','code'=>'DVO'],
-    ['name'=>'Boracay','code'=>'KLO'],['name'=>'Puerto Princesa','code'=>'PPS'],['name'=>'Tagbilaran','code'=>'TAG'],
-    ['name'=>'Siargao','code'=>'IAO'],['name'=>'Iloilo City','code'=>'ILO'],['name'=>'Bacolod','code'=>'BCD'],
-    ['name'=>'Zamboanga','code'=>'ZAM'],['name'=>'Cagayan de Oro','code'=>'CGY'],['name'=>'General Santos','code'=>'GES'],
-    ['name'=>'Tacloban','code'=>'TAC'],['name'=>'Dumaguete','code'=>'DGT'],['name'=>'El Nido','code'=>'ENI'],
-    ['name'=>'Coron','code'=>'USU'],['name'=>'Baguio','code'=>'BAG'],['name'=>'Tagaytay','code'=>'MNL'],
-    ['name'=>'Vigan','code'=>'VIG'],['name'=>'Batanes','code'=>'BSO'],['name'=>'Camiguin','code'=>'CGM'],
-    ['name'=>'Siquijor','code'=>'DGT'],['name'=>'Surigao','code'=>'SUG'],['name'=>'Laoag','code'=>'LAO'],
-    ['name'=>'Legazpi','code'=>'LGP'],
-];
-$intlCities2 = [
-    ['name'=>'Singapore','code'=>'SIN'],['name'=>'Bangkok','code'=>'BKK'],['name'=>'Bali','code'=>'DPS'],
-    ['name'=>'Tokyo','code'=>'NRT'],['name'=>'Seoul','code'=>'ICN'],['name'=>'Kuala Lumpur','code'=>'KUL'],
-    ['name'=>'Hong Kong','code'=>'HKG'],['name'=>'Dubai','code'=>'DXB'],['name'=>'London','code'=>'LHR'],
-    ['name'=>'Paris','code'=>'CDG'],['name'=>'New York','code'=>'JFK'],['name'=>'Sydney','code'=>'SYD'],
-    ['name'=>'Osaka','code'=>'KIX'],['name'=>'Taipei','code'=>'TPE'],['name'=>'Rome','code'=>'FCO'],
-    ['name'=>'Barcelona','code'=>'BCN'],['name'=>'Amsterdam','code'=>'AMS'],['name'=>'Maldives','code'=>'MLE'],
-    ['name'=>'Phuket','code'=>'HKT'],['name'=>'Ho Chi Minh City','code'=>'SGN'],['name'=>'Hanoi','code'=>'HAN'],
-    ['name'=>'Doha','code'=>'DOH'],['name'=>'Istanbul','code'=>'IST'],['name'=>'Toronto','code'=>'YYZ'],
-    ['name'=>'Los Angeles','code'=>'LAX'],
-];
-$allCities2 = array_merge(
-    array_map(fn($c)=>array_merge($c,['group'=>'Local']),$localCities2),
-    array_map(fn($c)=>array_merge($c,['group'=>'International']),$intlCities2)
-);
+// Built from the traveller's registration country: "Local" means THEIR
+// country, not the Philippines. This was two hardcoded copies of a Philippine
+// city list, so a Canadian was asked which Philippine city they were leaving
+// from. See PlaceCatalog::cityOptionsFor().
+$allCities2 = \App\Support\PlaceCatalog::cityOptionsFor(auth()->user()?->country);
+$originCountryLabel2 = \App\Support\PlaceCatalog::originCountryFor(auth()->user()?->country);
 @endphp
 
 <style>
@@ -715,9 +712,9 @@ $allCities2 = array_merge(
                 <div class="city-drop" x-show="activeDrop2==='from'" @click.outside="activeDrop2=''" x-cloak style="min-width:260px;">
                     <div class="city-search"><input type="text" x-model="fromSearch2" placeholder="Select city" @input="$forceUpdate()"></div>
                     <div class="city-list">
-                        <template x-for="grp in ['Local','International']" :key="grp">
+                        <template x-for="grp in originGroups" :key="grp">
                             <div>
-                                <div class="city-group-label" x-text="grp+' Destinations'"></div>
+                                <div class="city-group-label">{{ $originCountryLabel2 }}</div>
                                 <template x-for="c in filteredCities2('from',grp)" :key="c.code+c.name">
                                     <div class="city-item" @click="selectCity2('from',c)"><span class="code" x-text="c.code"></span><span x-text="c.name"></span></div>
                                 </template>
@@ -1271,6 +1268,9 @@ window.pytFlight = function() {
         toLabel: @json($manualTo ? $manualTo . ' (' . \App\Livewire\Traveler\TripPlannerWizard::staticIataCode($manualTo) . ')' : ''),
         toCode: @json($manualTo ? \App\Livewire\Traveler\TripPlannerWizard::staticIataCode($manualTo) : ''),
         mcCode: @json($mcTo ? \App\Livewire\Traveler\TripPlannerWizard::staticIataCode($mcTo) : ''),
+        // You depart from where you live, so the origin picker offers only
+        // the traveller's own country. Destinations still span both groups.
+        originGroups: ['Local'],
         fromSearch2: '', toSearch2: '',
         startLabel2: '', endLabel2: '',
         startVal2: @json($startDate ?? ''),
@@ -2309,7 +2309,10 @@ window.sortAttractions = function(dir) {
                 if ($wire.emergency) this.display = Number($wire.emergency).toLocaleString('en-PH');
             },
             format(e) {
-                let raw = e.target.value.replace(/[^\d]/g, '').slice(0, 7);
+                // 12, not 7 — this field is typed in the trip's currency (see
+                // confirmEmergencyFund), so a low-value one like dong or rupiah
+                // needs the extra digits to express an ordinary amount.
+                let raw = e.target.value.replace(/[^\d]/g, '').slice(0, 12);
                 this.display = raw ? Number(raw).toLocaleString('en-PH') : '';
                 this.bad = false;
                 $wire.set('emergency', raw ? Number(raw) : 0);
@@ -2339,7 +2342,7 @@ window.sortAttractions = function(dir) {
 
         {{-- Input area --}}
         <div style="padding:40px 40px 32px;text-align:left;">
-            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:14px;">Your Allocated Emergency Fund (must not exceed 7 digits)</div>
+            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:14px;">Your Allocated Emergency Fund</div>
             <div class="ef-field" :class="{ 'is-bad': bad }">
                 <div style="width:44px;height:44px;border-radius:12px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
                     <i class="fa-solid fa-piggy-bank" style="color:var(--primary);font-size:19px;"></i>
@@ -2380,10 +2383,10 @@ window.sortAttractions = function(dir) {
      only when the destination's currency differs from pesos. --}}
 @if ($showCurrencyConvertModal && $destinationCurrencyCode !== null)
 @php
-    // The traveler's real base currency (from their profile's home city)
-    // when one's set, not always pesos — pesos is just the fallback for
-    // travelers whose base currency already is PHP.
-    $fromCode = ($tripCurrency !== '' && $tripCurrency !== 'PHP') ? $tripCurrency : 'PHP';
+    // The traveller's own currency (from the country they registered with),
+    // which is also what every figure on the previous screens was priced in.
+    // Pesos only when that IS their currency.
+    $fromCode = $this->budgetCurrency();
     $fromName = \App\Support\PlaceCatalog::CURRENCY_NAMES[$fromCode] ?? $fromCode;
     $toName   = \App\Support\PlaceCatalog::CURRENCY_NAMES[$destinationCurrencyCode] ?? $destinationCurrencyCode;
 @endphp
@@ -2405,7 +2408,7 @@ window.sortAttractions = function(dir) {
             <button wire:click="declineCurrencyConversion"
                     style="flex:1;background:transparent;color:var(--muted);border:1.5px solid var(--border);border-radius:12px;padding:12px 0;font-size:13px;font-weight:700;cursor:pointer;transition:background .18s,border-color .18s;"
                     onmouseenter="this.style.background='var(--border-light)';this.style.borderColor='var(--border)'" onmouseleave="this.style.background='transparent';this.style.borderColor='var(--border)'">
-                No, keep pesos
+                No, keep {{ $fromCode }}
             </button>
             <button wire:click="acceptCurrencyConversion" wire:loading.attr="disabled" wire:target="acceptCurrencyConversion"
                     style="flex:1;background:var(--primary);color:#fff;border:none;border-radius:12px;padding:12px 0;font-size:13px;font-weight:700;cursor:pointer;transition:background .18s,transform .12s;"
@@ -2466,7 +2469,9 @@ window.sortAttractions = function(dir) {
     if ($tripCurrency !== '' && $tripCurrency !== 'PHP') {
         $liveRate = (new \App\Services\CurrencyConverterService())->rateToPhp($tripCurrency);
         if ($liveRate !== null) {
-            $budSymbol  = \App\Support\PlaceCatalog::CURRENCY_SYMBOLS[$tripCurrency] ?? '₱';
+            // Never '₱' here — $budDivisor below turns the figure into
+            // $tripCurrency, so a peso sign would mislabel it.
+            $budSymbol  = \App\Support\PlaceCatalog::CURRENCY_SYMBOLS[$tripCurrency] ?? $tripCurrency . ' ';
             $budDivisor = $liveRate;
         }
     }
@@ -3611,7 +3616,9 @@ window.sortAttractions = function(dir) {
 {{-- ═══════════════════════════════════════════════════════════════
      EMPTY STATE — no trips yet
 ═══════════════════════════════════════════════════════════════ --}}
-@if ($showEmpty && !auth()->user()?->userProfile)
+@php $twNeedsProfile = $showEmpty && ! auth()->user()?->userProfile; @endphp
+@if ($twNeedsProfile)
+<div class="empty-state-swap" data-empty-when="profile">
 <div class="empty-state-center" style="width:100%;min-height:calc(100vh - 120px);">
     <div style="width:64px;height:64px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
         <i class="fa-solid fa-map-location-dot" style="font-size:28px;color:#fff;"></i>
@@ -3621,6 +3628,10 @@ window.sortAttractions = function(dir) {
     <a href="{{ route('profile.setup') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
         <i class="fa-solid fa-user"></i> Set Up Your Profile First
     </a>
+    {{-- This tab has no "plan your first trip" button to skip to — Mode Select
+         below *is* the next step, so that is what the skip reveals. --}}
+    <button type="button" class="empty-state-skip" onclick="budgetraSkipProfileSetup()">Skip this step</button>
+</div>
 </div>
 @endif
 
@@ -3629,8 +3640,12 @@ window.sortAttractions = function(dir) {
      Shown as the empty state too (no trips yet, but profile exists) —
      skips the old "No trips planned yet" screen and its button so
      first-time planners land straight on Manual/AI Powered Planning.
+
+     Always rendered at step 0; when the profile is still missing it sits
+     behind the prompt above until "Skip this step" swaps them.
 ═══════════════════════════════════════════════════════════════ --}}
-@if ((!$showEmpty || auth()->user()?->userProfile) && $planningMode === '' && $step === 0)
+@if ($planningMode === '' && $step === 0)
+<div class="empty-state-swap" @if ($twNeedsProfile) data-empty-when="skipped" @endif>
 <style>
 .mode-card{background:var(--bg-white);border:1.5px solid var(--border);border-radius:22px;overflow:hidden;cursor:pointer;transition:box-shadow .25s ease,transform .25s ease,border-color .25s ease;display:flex;flex-direction:column;height:fit-content;align-self:start;text-decoration:none;color:inherit;position:relative;outline:none;-webkit-tap-highlight-color:transparent;}
 .mode-card:focus,.mode-card:focus-visible{outline:none;}
@@ -3755,6 +3770,7 @@ window.sortAttractions = function(dir) {
         </div>
     </div>
 </div>
+</div>{{-- .empty-state-swap --}}
 @endif
 
 

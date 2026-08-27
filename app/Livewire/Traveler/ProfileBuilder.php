@@ -14,6 +14,8 @@ class ProfileBuilder extends Component
     public int    $step       = 1;
     public string $returnTo   = '';
     public string $homeCity   = '';
+    // Set when a save is refused because the budget could not be converted.
+    public string $saveError  = '';
     public string $dailyBudgetDisplay = '';
     public float  $dailyBudget = 0;
     public string $travelStyle = '';
@@ -286,15 +288,20 @@ class ProfileBuilder extends Component
         }
     }
 
-    private function persistProfile(): void
+    /**
+     * Returns false when the save was refused — currently only when a foreign
+     * daily budget can't be turned into pesos by any means. Callers must not
+     * navigate away in that case.
+     */
+    private function persistProfile(): bool
     {
         // Captured before the write so only genuinely new companions get a
         // notification — re-saving the profile must not re-notify everyone.
         // Read straight from the table rather than auth()->user()->userProfile:
         // that relation is cached on the User instance, so a second save in
         // the same request would still see the pre-save list and notify twice.
-        $previousEmails = (array) (UserProfile::where('user_id', auth()->id())
-            ->value('group_member_emails') ?? []);
+        $existing = UserProfile::where('user_id', auth()->id())->first();
+        $previousEmails = (array) ($existing?->group_member_emails ?? []);
 
         $pesoBudget    = $this->dailyBudget;
         $localCurrency = null;
@@ -302,11 +309,35 @@ class ProfileBuilder extends Component
 
         $currencyCode = $this->currencyForHomeCity($this->homeCity);
         if ($currencyCode !== null && $currencyCode !== 'PHP' && $this->dailyBudget > 0) {
-            $rate = (new CurrencyConverterService())->rateToPhp($currencyCode);
-            if ($rate !== null) {
-                $localCurrency = $currencyCode;
-                $localBudget   = $this->dailyBudget;
-                $pesoBudget    = round($this->dailyBudget * $rate, 2);
+            $converter = new CurrencyConverterService();
+
+            // Recorded whether or not a rate is found, so the amount the
+            // traveller actually typed and the currency it was typed in are
+            // never lost and the pesos can always be re-derived later.
+            $localCurrency = $currencyCode;
+            $localBudget   = $this->dailyBudget;
+
+            $liveRate = $converter->rateToPhp($currencyCode);
+            $sameAsSaved = $existing
+                && $existing->daily_budget_currency === $currencyCode
+                && (float) $existing->daily_budget_local === (float) $this->dailyBudget;
+
+            if ($liveRate !== null) {
+                $pesoBudget = round($this->dailyBudget * $liveRate, 2);
+            } elseif ($sameAsSaved) {
+                // Same foreign amount as the last save and no live rate right
+                // now: keep the figure that WAS converted from a live rate.
+                // Not a guessed rate — a previously live-derived one — and it
+                // is what stops a provider outage from rewriting a correct
+                // budget, which it used to do with the raw foreign number.
+                $pesoBudget = (float) $existing->daily_budget;
+            } else {
+                // No rate, and nothing previously converted to fall back on.
+                // Refuse rather than store a foreign amount as pesos. Matches
+                // confirmEmergencyFund() in the trip planner, which already
+                // blocks on this same condition.
+                $this->saveError = "I couldn't convert your {$currencyCode} budget into pesos just now — please try again in a moment.";
+                return false;
             }
         }
 
@@ -329,6 +360,10 @@ class ProfileBuilder extends Component
         if ($this->travelStyle === 'Group') {
             $this->notifyNewCompanions($previousEmails);
         }
+
+        $this->saveError = '';
+
+        return true;
     }
 
     /**
@@ -357,7 +392,8 @@ class ProfileBuilder extends Component
 
     public function confirmProfile(): void
     {
-        $this->persistProfile();
+        if (! $this->persistProfile()) return;   // stay put, saveError is shown
+
         $this->redirect(route($this->returnTo ?: 'trips.plan'), navigate: true);
     }
 
@@ -374,7 +410,9 @@ class ProfileBuilder extends Component
         }
 
         $this->resetErrorBag();
-        $this->persistProfile();
+
+        if (! $this->persistProfile()) return;   // stay put, saveError is shown
+
         $this->redirect(route($this->returnTo ?: 'dashboard'), navigate: true);
     }
 
@@ -403,7 +441,11 @@ class ProfileBuilder extends Component
             }
         }
 
-        return null;
+        // Trips derive a currency from a different table, keyed by city rather
+        // than country. A city listed there but not in country_cities used to
+        // yield no currency here at all, so the same place could be foreign to
+        // the planner and peso-denominated to the profile.
+        return PlaceCatalog::DESTINATION_CURRENCIES[strtolower(trim($homeCity))] ?? null;
     }
 
     private function budgetDisplaySymbol(): string

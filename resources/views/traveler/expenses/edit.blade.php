@@ -52,7 +52,7 @@
                 <select name="trip_id" id="trip_id" class="form-control {{ $errors->has('trip_id') ? 'is-invalid' : '' }}" required>
                     @foreach ($trips as $trip)
                     <option value="{{ $trip->id }}" {{ old('trip_id', $expense->trip_id) == $trip->id ? 'selected' : '' }}>
-                        {{ $trip->destination }} ({{ $trip->start_date->format('M Y') }})
+                        {{ place_with_country($trip->destination) }} ({{ $trip->start_date->format('M Y') }})
                     </option>
                     @endforeach
                 </select>
@@ -61,10 +61,33 @@
 
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
                 <div class="form-group">
-                    <label class="form-label" for="amount">Amount ({{ currency_symbol() }})</label>
-                    <input type="number" step="0.01" min="0.01" id="amount" name="amount"
-                           class="form-control {{ $errors->has('amount') ? 'is-invalid' : '' }}"
-                           value="{{ old('amount', $expense->amount) }}" required>
+                    {{-- Shows what was actually spent (¥3,500), not the stored peso
+                         figure. Editing the converted value and saving it back would
+                         convert it a second time. --}}
+                    <label class="form-label" for="amount">Amount</label>
+                    @php
+                        $expCurrency = $expense->amount_currency ?: 'PHP';
+                        $expTyped    = $expense->amount_original ?? $expense->amount;
+                    @endphp
+                    <div style="display:flex;gap:8px;">
+                        <select name="amount_currency" id="amount_currency"
+                                class="form-control" style="max-width:120px;flex-shrink:0;">
+                            @foreach (\App\Support\PlaceCatalog::CURRENCY_SYMBOLS as $code => $symbol)
+                            <option value="{{ $code }}" {{ old('amount_currency', $expCurrency) === $code ? 'selected' : '' }}>
+                                {{ $symbol }} {{ $code }}
+                            </option>
+                            @endforeach
+                        </select>
+                        <input type="number" step="0.01" min="0.01" id="amount" name="amount"
+                               class="form-control {{ $errors->has('amount') ? 'is-invalid' : '' }}"
+                               value="{{ old('amount', $expTyped) }}" required>
+                    </div>
+                    @if ($expense->isForeign())
+                    <div class="text-muted" style="font-size:11px;margin-top:6px;">
+                        Currently recorded as ₱{{ number_format((float) $expense->amount, 2) }}.
+                        Saving re-converts at today’s rate.
+                    </div>
+                    @endif
                     @error('amount')<div class="form-error">{{ $message }}</div>@enderror
                 </div>
                 <div class="form-group">

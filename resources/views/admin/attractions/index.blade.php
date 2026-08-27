@@ -72,58 +72,64 @@
 <div id="attractionModal" class="admin-modal-backdrop" style="display:none;" onclick="if(event.target===this)closeAttractionModal();">
     <div class="admin-modal-card">
         <div class="admin-modal-head">
-            <h3>Edit Attraction</h3>
-            <button type="button" class="admin-modal-close" onclick="closeAttractionModal();"><i class="fa-solid fa-xmark"></i></button>
+            <div class="admin-modal-icon"><i class="fa-solid fa-pen"></i></div>
+            <h3 class="admin-modal-title">Edit Attraction</h3>
+            {{-- Filled in with the attraction's name so the dialog says which
+                 record is being edited without a second heading. --}}
+            <p class="admin-modal-sub" id="attrModalSub"></p>
+            <button type="button" class="admin-modal-close" aria-label="Close" onclick="closeAttractionModal();"><i class="fa-solid fa-xmark"></i></button>
         </div>
-        <form id="attractionForm" method="POST" enctype="multipart/form-data">
+        <form id="attractionForm" method="POST" enctype="multipart/form-data" class="admin-modal-form">
             @csrf @method('PUT')
-            <div class="admin-form-row">
-                <div class="admin-form-group">
-                    <label>Attraction Name</label>
-                    <input type="text" name="name" id="attrModalName" class="admin-input" required>
+            <div class="admin-modal-body">
+                <div class="admin-form-row">
+                    <div class="admin-form-group">
+                        <label>Attraction Name</label>
+                        <input type="text" name="name" id="attrModalName" class="admin-input" required>
+                    </div>
+                    <div class="admin-form-group">
+                        <label>Destination</label>
+                        <input type="text" name="destination" id="attrModalDestination" class="admin-input" required>
+                    </div>
+                </div>
+                <div class="admin-form-row">
+                    <div class="admin-form-group">
+                        <label>Category</label>
+                        <input type="text" name="category" id="attrModalCategory" class="admin-input">
+                    </div>
+                    <div class="admin-form-group">
+                        <label>Region</label>
+                        <select name="region" id="attrModalRegion" class="admin-input" required>
+                            <option value="local">Local</option>
+                            <option value="international">International</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="admin-form-group">
-                    <label>Destination</label>
-                    <input type="text" name="destination" id="attrModalDestination" class="admin-input" required>
-                </div>
-            </div>
-            <div class="admin-form-row">
-                <div class="admin-form-group">
-                    <label>Category</label>
-                    <input type="text" name="category" id="attrModalCategory" class="admin-input">
+                    <label>Rating (0–5)</label>
+                    <input type="number" step="0.1" min="0" max="5" name="rating" id="attrModalRating" class="admin-input">
                 </div>
                 <div class="admin-form-group">
-                    <label>Region</label>
-                    <select name="region" id="attrModalRegion" class="admin-input" required>
-                        <option value="local">Local</option>
-                        <option value="international">International</option>
-                    </select>
+                    <label>Description</label>
+                    <textarea name="description" id="attrModalDescription" class="admin-input" rows="4"></textarea>
                 </div>
-            </div>
-            <div class="admin-form-group">
-                <label>Rating (0–5)</label>
-                <input type="number" step="0.1" min="0" max="5" name="rating" id="attrModalRating" class="admin-input">
-            </div>
-            <div class="admin-form-group">
-                <label>Description</label>
-                <textarea name="description" id="attrModalDescription" class="admin-input" rows="4"></textarea>
-            </div>
-            <div class="admin-form-group">
-                <label>Featured Image</label>
-                <img id="attrModalImagePreview" src="" alt="" style="display:none;height:70px;border-radius:8px;margin-bottom:8px;">
-                <label class="admin-file-drop">
-                    <input type="file" name="image" accept="image/*" style="display:none;" onchange="this.closest('.admin-file-drop').querySelector('span').textContent = this.files[0]?.name || 'Click to upload or drag and drop';">
-                    <i class="fa-solid fa-upload"></i>
-                    <span>Click to upload or drag and drop</span>
-                    <small>PNG, JPG up to 10MB</small>
-                </label>
-                <button type="button" id="attrFetchImageBtn" class="admin-btn admin-btn-outline admin-btn-sm" style="margin-top:8px;">
-                    <i class="fa-solid fa-cloud-arrow-down"></i> Fetch Photo via API
-                </button>
+                <div class="admin-form-group">
+                    <label>Featured Image</label>
+                    <img id="attrModalImagePreview" class="admin-modal-thumb" src="" alt="" style="display:none;">
+                    <label class="admin-file-drop">
+                        <input type="file" name="image" accept="image/*" style="display:none;" onchange="this.closest('.admin-file-drop').querySelector('span').textContent = this.files[0]?.name || 'Click to upload or drag and drop';">
+                        <i class="fa-solid fa-upload"></i>
+                        <span>Click to upload or drag and drop</span>
+                        <small>PNG, JPG up to 10MB</small>
+                    </label>
+                    <button type="button" id="attrFetchImageBtn" class="admin-btn admin-btn-outline admin-btn-sm" style="margin-top:8px;">
+                        <i class="fa-solid fa-cloud-arrow-down"></i> Fetch Photo via API
+                    </button>
+                </div>
             </div>
             <div class="admin-modal-actions">
-                <button type="button" class="admin-btn admin-btn-outline" onclick="closeAttractionModal();">Cancel</button>
-                <button type="submit" class="admin-btn admin-btn-primary">Save Changes</button>
+                <button type="button" class="admin-modal-btn admin-modal-btn-cancel" onclick="closeAttractionModal();">Cancel</button>
+                <button type="submit" class="admin-modal-btn admin-modal-btn-primary">Save Changes</button>
             </div>
         </form>
         <form id="attractionFetchImageForm" method="POST" style="display:none;">@csrf</form>
@@ -131,23 +137,22 @@
 </div>
 
 <div id="deleteAttractionModal" class="admin-modal-backdrop" style="display:none;" onclick="if(event.target===this)closeDeleteAttractionModal();">
-    <div class="admin-modal-card">
+    <div class="admin-modal-card admin-modal-card-sm">
         <div class="admin-modal-head">
-            <h3>Delete Attraction</h3>
-            <button type="button" class="admin-modal-close" onclick="closeDeleteAttractionModal();"><i class="fa-solid fa-xmark"></i></button>
-        </div>
-        <div style="padding:20px 24px;">
-            <p style="margin:0 0 20px;font-size:14px;color:var(--admin-muted, #8A7A6C);line-height:1.6;">
-                Delete <strong id="deleteAttractionName" style="color:var(--admin-ink, #241208);"></strong>? This cannot be undone.
+            <div class="admin-modal-icon admin-modal-icon-danger"><i class="fa-solid fa-trash-can"></i></div>
+            <h3 class="admin-modal-title">Delete Attraction?</h3>
+            <p class="admin-modal-sub">
+                <strong id="deleteAttractionName"></strong> will be permanently removed.<br>This action cannot be undone.
             </p>
-            <form id="deleteAttractionForm" method="POST">
-                @csrf @method('DELETE')
-                <div class="admin-modal-actions">
-                    <button type="button" class="admin-btn admin-btn-outline" onclick="closeDeleteAttractionModal();">Cancel</button>
-                    <button type="submit" class="admin-btn admin-btn-primary" style="background:var(--admin-danger, #D64545);border-color:var(--admin-danger, #D64545);">Delete Attraction</button>
-                </div>
-            </form>
+            <button type="button" class="admin-modal-close" aria-label="Close" onclick="closeDeleteAttractionModal();"><i class="fa-solid fa-xmark"></i></button>
         </div>
+        <form id="deleteAttractionForm" method="POST">
+            @csrf @method('DELETE')
+            <div class="admin-modal-actions">
+                <button type="button" class="admin-modal-btn admin-modal-btn-cancel" onclick="closeDeleteAttractionModal();">Cancel</button>
+                <button type="submit" class="admin-modal-btn admin-modal-btn-danger"><i class="fa-solid fa-trash"></i> Delete</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -169,6 +174,7 @@
     document.addEventListener('click', function (e) {
         const btn = e.target.closest('.js-edit-attraction-btn');
         if (!btn) return;
+        document.getElementById('attrModalSub').textContent = btn.dataset.name || '';
         document.getElementById('attrModalName').value = btn.dataset.name || '';
         document.getElementById('attrModalDestination').value = btn.dataset.destination || '';
         document.getElementById('attrModalCategory').value = btn.dataset.category || '';

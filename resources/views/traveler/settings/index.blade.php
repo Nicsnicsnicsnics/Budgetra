@@ -135,31 +135,13 @@
     {{-- Preferences --}}
     <div class="card settings-card"><div class="card-body">
         <h2>Preferences</h2>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-            <div>
-                <label class="settings-field-label">Display currency</label>
-                @php
-                    $currencies = [
-                        'PHP' => ['symbol' => '₱', 'name' => 'Philippine peso'],
-                        'USD' => ['symbol' => '$', 'name' => 'US dollar'],
-                        'EUR' => ['symbol' => '€', 'name' => 'Euro'],
-                        'GBP' => ['symbol' => '£', 'name' => 'British pound'],
-                        'JPY' => ['symbol' => '¥', 'name' => 'Japanese yen'],
-                        'SGD' => ['symbol' => 'S$', 'name' => 'Singapore dollar'],
-                        'AUD' => ['symbol' => 'A$', 'name' => 'Australian dollar'],
-                        'KRW' => ['symbol' => '₩', 'name' => 'South Korean won'],
-                        'HKD' => ['symbol' => 'HK$', 'name' => 'Hong Kong dollar'],
-                        'THB' => ['symbol' => '฿', 'name' => 'Thai baht'],
-                        'MYR' => ['symbol' => 'RM', 'name' => 'Malaysian ringgit'],
-                        'AED' => ['symbol' => 'د.إ', 'name' => 'UAE dirham'],
-                    ];
-                @endphp
-                <select id="currencySelect" class="settings-select">
-                    @foreach ($currencies as $code => $c)
-                    <option value="{{ $code }}" data-symbol="{{ $c['symbol'] }}" {{ $user->currency_code === $code ? 'selected' : '' }}>{{ $code }} - {{ $c['name'] }}</option>
-                    @endforeach
-                </select>
-            </div>
+        {{-- The "Display currency" picker was removed. It only swapped the symbol
+             printed beside peso figures — including on the expense and savings
+             amount INPUTS — while converting nothing, so any choice other than
+             PHP silently mis-recorded what travellers typed. Budgetra's ledger is
+             pesos; trips still display in their destination currency at a live
+             rate on the trip cards, which is real conversion. --}}
+        <div style="display:grid;grid-template-columns:1fr;gap:16px;">
             <div>
                 <label class="settings-field-label">Default buffer</label>
                 <select id="bufferSelect" class="settings-select">
@@ -304,20 +286,16 @@
         });
     }
 
-    // Currency + default buffer
-    var currencySelect = document.getElementById('currencySelect');
+    // Default buffer. The currency picker that used to post alongside it is
+    // gone — see the note on the removed field above.
     var bufferSelect = document.getElementById('bufferSelect');
 
     function savePreferences() {
-        if (!currencySelect || !bufferSelect) return;
-        var opt = currencySelect.options[currencySelect.selectedIndex];
+        if (!bufferSelect) return;
         patch('{{ route('settings.preferences') }}', {
-            currency_code: currencySelect.value,
-            currency_symbol: opt.dataset.symbol,
             default_buffer_pct: parseInt(bufferSelect.value, 10),
         });
     }
-    if (currencySelect) currencySelect.addEventListener('change', savePreferences);
     if (bufferSelect) bufferSelect.addEventListener('change', savePreferences);
 
     // Notification / OCR toggles

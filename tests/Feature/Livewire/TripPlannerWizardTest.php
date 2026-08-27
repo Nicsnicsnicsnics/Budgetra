@@ -173,7 +173,9 @@ class TripPlannerWizardTest extends TestCase
         $trip = Trip::where('user_id', $user->id)->first();
         $this->assertNotNull($trip);
         $this->assertSame('JPY', $trip->destination_currency);
-        $this->assertEquals(round(60000 / 0.387, 2), (float) $trip->destination_budget);
+        // Only the code is persisted. destination_budget was a save-time
+        // snapshot nothing read back; the peso budget is the source of truth
+        // and cards convert from the code at display time.
         $this->assertEquals(60000, (float) $trip->budget_limit);
     }
 
@@ -424,7 +426,11 @@ class TripPlannerWizardTest extends TestCase
     // destination's currency (JPY) differs from pesos, so confirming the
     // emergency fund step should show the conversion modal instead of
     // jumping straight to Step 7.
-    public function test_confirming_emergency_fund_shows_the_conversion_modal_for_a_foreign_destination(): void
+    // The prompt used to fire when the emergency fund was confirmed, before an
+    // itinerary existed. It now waits for "Save Itinerary": the traveller plans
+    // in their own currency throughout and is asked about the destination's only
+    // once there is a finished trip to convert.
+    public function test_saving_the_itinerary_shows_the_conversion_modal_for_a_foreign_destination(): void
     {
         $user = User::factory()->create();
 
@@ -435,7 +441,7 @@ class TripPlannerWizardTest extends TestCase
             ->set('tripCurrency', '')
             ->set('manualBudgetMin', '60000')
             ->set('manualBudgetMax', '60000')
-            ->call('confirmEmergencyFund');
+            ->call('continueItinerary');
 
         $component->assertSet('showCurrencyConvertModal', true);
         $component->assertSet('destinationCurrencyCode', 'JPY');
@@ -462,7 +468,7 @@ class TripPlannerWizardTest extends TestCase
             ->set('tripCurrency', 'CAD')
             ->set('manualBudgetMin', '60000')
             ->set('manualBudgetMax', '60000')
-            ->call('confirmEmergencyFund');
+            ->call('continueItinerary');
 
         $html = $component->html();
         $this->assertStringContainsString('Canadian dollars (CAD)', $html);
@@ -501,15 +507,19 @@ class TripPlannerWizardTest extends TestCase
             ->set('tripCurrency', '')
             ->set('manualBudgetMin', '60000')
             ->set('manualBudgetMax', '60000')
-            ->call('confirmEmergencyFund')
+            ->call('continueItinerary')
             ->call('acceptCurrencyConversion');
 
         $component->assertSet('showCurrencyConvertModal', false);
-        $component->assertSet('step', 7);
+        $component->assertSet('step', 9);
         $component->assertSet('convertedBudget', round(60000 / 0.387, 2));
 
+        // The "≈ … in Tokyo" aside belonged to step 7. Accepting now lands on
+        // the summary, and the whole point of accepting is that the summary and
+        // its cost estimation are denominated in the destination's currency.
         $html = $component->html();
-        $this->assertStringContainsString('in Tokyo', $html);
+        $this->assertStringContainsString('¥', $html);
+        $this->assertStringNotContainsString('₱', $html);
     }
 
     public function test_accepting_the_conversion_shows_an_error_when_the_live_rate_is_unavailable(): void
@@ -526,7 +536,7 @@ class TripPlannerWizardTest extends TestCase
             ->set('tripCurrency', '')
             ->set('manualBudgetMin', '60000')
             ->set('manualBudgetMax', '60000')
-            ->call('confirmEmergencyFund')
+            ->call('continueItinerary')
             ->call('acceptCurrencyConversion');
 
         $component->assertSet('showCurrencyConvertModal', true);
@@ -547,11 +557,11 @@ class TripPlannerWizardTest extends TestCase
             ->set('tripCurrency', '')
             ->set('manualBudgetMin', '60000')
             ->set('manualBudgetMax', '60000')
-            ->call('confirmEmergencyFund')
+            ->call('continueItinerary')
             ->call('declineCurrencyConversion');
 
         $component->assertSet('showCurrencyConvertModal', false);
-        $component->assertSet('step', 7);
+        $component->assertSet('step', 9);
         $component->assertSet('convertedBudget', null);
 
         $html = $component->html();

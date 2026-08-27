@@ -150,7 +150,12 @@ class Llm extends Component
     public function mount(): void
     {
 
-        $this->aiCurrency = currency_code();
+        // Pesos until the traveller says otherwise — either by naming a currency
+        // in the prompt (detectAndConvertCurrency) or by having a foreign home
+        // city on their profile. This used to seed from the account's Settings
+        // currency, which defaulted to USD and showed every new traveller their
+        // peso budget converted into dollars.
+        $this->aiCurrency = 'PHP';
 
         $draft = AiConversationDraft::where('user_id', auth()->id())->first();
         if (!$draft) {
@@ -271,8 +276,9 @@ class Llm extends Component
             'start_date'           => $this->aiDateFrom,
             'end_date'             => $endDate,
             'budget_limit'         => $this->aiBudgetMax ?: $this->aiBudgetMin,
+            // Code only — destination_budget was a save-time snapshot nothing
+            // ever read back. Cards convert from the code at display time.
             'destination_currency' => $conversion['code'] ?? null,
-            'destination_budget'   => $conversion['amount'] ?? null,
             'travel_type'          => 'Solo',
             'num_travelers'        => max(1, $this->aiTravelers),
             'status'               => 'draft',
@@ -847,7 +853,7 @@ class Llm extends Component
         $this->aiDateTo        = '';
         $this->aiDays          = 0;
         $this->aiTravelers     = 0;
-        $this->aiCurrency      = currency_code();
+        $this->aiCurrency      = 'PHP';   // see mount()
         $this->aiPackage       = [];
         $this->aiGenCount      = 0;
         $this->aiBudgetIsDaily = false;
@@ -2124,33 +2130,37 @@ PROMPT;
         ]);
     }
 
+    // Name and symbol only. These carried a hardcoded 'rate' for every currency
+    // that nothing ever read — dead data that looked like a working fallback and
+    // made a deliberate no-hardcode policy read as an oversight. Rates come from
+    // CurrencyConverterService, live, or not at all.
     private const SUPPORTED_CURRENCIES = [
-        'PHP' => ['name' => 'Philippine pesos',   'symbol' => '₱',    'rate' => 1],
-        'USD' => ['name' => 'US dollars',         'symbol' => '$',    'rate' => 56],
-        'EUR' => ['name' => 'euros',              'symbol' => '€',    'rate' => 61],
-        'GBP' => ['name' => 'British pounds',     'symbol' => '£',    'rate' => 71],
-        'JPY' => ['name' => 'Japanese yen',       'symbol' => '¥',    'rate' => 0.38],
-        'SGD' => ['name' => 'Singapore dollars',  'symbol' => 'S$',   'rate' => 42],
-        'AUD' => ['name' => 'Australian dollars', 'symbol' => 'A$',   'rate' => 37],
-        'KRW' => ['name' => 'Korean won',         'symbol' => '₩',    'rate' => 0.041],
-        'HKD' => ['name' => 'Hong Kong dollars',  'symbol' => 'HK$',  'rate' => 7.2],
-        'THB' => ['name' => 'Thai baht',          'symbol' => '฿',    'rate' => 1.6],
-        'MYR' => ['name' => 'Malaysian ringgit',  'symbol' => 'RM',   'rate' => 12.5],
-        'AED' => ['name' => 'UAE dirhams',        'symbol' => 'AED ', 'rate' => 15.3],
-        'IDR' => ['name' => 'Indonesian rupiah',  'symbol' => 'Rp',   'rate' => 0.0036],
-        'VND' => ['name' => 'Vietnamese dong',    'symbol' => '₫',    'rate' => 0.0023],
-        'CNY' => ['name' => 'Chinese yuan',       'symbol' => '¥',    'rate' => 7.8],
-        'INR' => ['name' => 'Indian rupee',       'symbol' => '₹',    'rate' => 0.67],
-        'NZD' => ['name' => 'New Zealand dollars','symbol' => 'NZ$',  'rate' => 34],
-        'CAD' => ['name' => 'Canadian dollars',   'symbol' => 'C$',   'rate' => 41],
-        'BRL' => ['name' => 'Brazilian real',     'symbol' => 'R$',   'rate' => 10],
-        'MXN' => ['name' => 'Mexican pesos',      'symbol' => 'MX$',  'rate' => 3],
-        'ARS' => ['name' => 'Argentine pesos',    'symbol' => 'AR$',  'rate' => 0.06],
-        'SAR' => ['name' => 'Saudi riyals',       'symbol' => 'SAR ', 'rate' => 15],
-        'EGP' => ['name' => 'Egyptian pounds',    'symbol' => 'EGP ', 'rate' => 1.15],
-        'NGN' => ['name' => 'Nigerian naira',     'symbol' => '₦',    'rate' => 0.036],
-        'ZAR' => ['name' => 'South African rand', 'symbol' => 'R',    'rate' => 3.1],
-        'KES' => ['name' => 'Kenyan shillings',   'symbol' => 'KSh ', 'rate' => 0.43],
+        'PHP' => ['name' => 'Philippine pesos',   'symbol' => '₱'],
+        'USD' => ['name' => 'US dollars',         'symbol' => '$'],
+        'EUR' => ['name' => 'euros',              'symbol' => '€'],
+        'GBP' => ['name' => 'British pounds',     'symbol' => '£'],
+        'JPY' => ['name' => 'Japanese yen',       'symbol' => '¥'],
+        'SGD' => ['name' => 'Singapore dollars',  'symbol' => 'S$'],
+        'AUD' => ['name' => 'Australian dollars', 'symbol' => 'A$'],
+        'KRW' => ['name' => 'Korean won',         'symbol' => '₩'],
+        'HKD' => ['name' => 'Hong Kong dollars',  'symbol' => 'HK$'],
+        'THB' => ['name' => 'Thai baht',          'symbol' => '฿'],
+        'MYR' => ['name' => 'Malaysian ringgit',  'symbol' => 'RM'],
+        'AED' => ['name' => 'UAE dirhams',        'symbol' => 'AED '],
+        'IDR' => ['name' => 'Indonesian rupiah',  'symbol' => 'Rp'],
+        'VND' => ['name' => 'Vietnamese dong',    'symbol' => '₫'],
+        'CNY' => ['name' => 'Chinese yuan',       'symbol' => '¥'],
+        'INR' => ['name' => 'Indian rupee',       'symbol' => '₹'],
+        'NZD' => ['name' => 'New Zealand dollars','symbol' => 'NZ$'],
+        'CAD' => ['name' => 'Canadian dollars',   'symbol' => 'C$'],
+        'BRL' => ['name' => 'Brazilian real',     'symbol' => 'R$'],
+        'MXN' => ['name' => 'Mexican pesos',      'symbol' => 'MX$'],
+        'ARS' => ['name' => 'Argentine pesos',    'symbol' => 'AR$'],
+        'SAR' => ['name' => 'Saudi riyals',       'symbol' => 'SAR '],
+        'EGP' => ['name' => 'Egyptian pounds',    'symbol' => 'EGP '],
+        'NGN' => ['name' => 'Nigerian naira',     'symbol' => '₦'],
+        'ZAR' => ['name' => 'South African rand', 'symbol' => 'R'],
+        'KES' => ['name' => 'Kenyan shillings',   'symbol' => 'KSh '],
     ];
 
     private const CURRENCY_ALIASES = [

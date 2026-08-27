@@ -28,9 +28,11 @@ class SettingsController extends Controller
 
     public function updatePreferences(Request $request)
     {
+        // currency_code / currency_symbol are deliberately not accepted here any
+        // more. They only ever relabelled peso figures — including the expense
+        // and savings amount inputs — without converting anything, so setting
+        // them to anything but PHP corrupted what got typed in. See app/helpers.php.
         $validated = $request->validate([
-            'currency_code'      => 'required|string|size:3',
-            'currency_symbol'    => 'required|string|max:5',
             'default_buffer_pct' => 'required|integer|min:0|max:100',
         ]);
 

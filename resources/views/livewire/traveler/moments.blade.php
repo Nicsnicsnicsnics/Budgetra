@@ -678,7 +678,7 @@
     // on a wire:ignore + wire:key-ed div, so a trip switch always gets a
     // fresh element (and therefore a fresh map + pin state).
     //
-    // Uses Leaflet + CartoDB Voyager raster tiles (same source as the
+    // Uses Leaflet over OpenStreetMap tiles (see public/js/basemap.js, same
     // Profile Builder home-location map), for consistency across the app.
     window.initMomentsMap = function (el, wire, lat, lng, zoom, label, initialPins) {
         if (typeof L === 'undefined' || !el) return;
@@ -697,11 +697,7 @@
         }
 
         var map = L.map(el, { attributionControl: false, zoomControl: false }).setView([lat, lng], zoom);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap contributors &copy; <a href="https://carto.com/">CARTO</a>',
-            subdomains: 'abcd',
-            maxZoom: 20,
-        }).addTo(map);
+        budgetraBasemap(map);
         L.control.attribution({ prefix: false, position: 'bottomright' }).addTo(map);
         L.control.zoom({ position: 'topright' }).addTo(map);
         window.__momentsMapInstance = map;
@@ -849,11 +845,7 @@
         }
 
         var map = L.map(el, { attributionControl: false, zoomControl: false }).setView([12.8797, 121.7740], 5);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap contributors &copy; <a href="https://carto.com/">CARTO</a>',
-            subdomains: 'abcd',
-            maxZoom: 20,
-        }).addTo(map);
+        budgetraBasemap(map);
         L.control.attribution({ prefix: false, position: 'bottomright' }).addTo(map);
         L.control.zoom({ position: 'topright' }).addTo(map);
         window.__momentsOverviewMapInstance = map;

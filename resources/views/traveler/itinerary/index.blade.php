@@ -3,11 +3,9 @@
 
 @push('styles')
 @if(($tab ?? 'itinerary') === 'moments')
-{{-- Leaflet + CartoDB Voyager raster tiles — same tile source already used
-     by the home-location map in Profile Builder, so both maps in the app
-     look consistent. Voyager's labels are Latin-script/English by design
-     (unlike some raster providers that bake in the viewer's local script),
-     so no vector-tile label-patching trick is needed here. --}}
+{{-- Leaflet. The tile source is shared with the home-location map in Profile
+     Builder so both maps look consistent — see public/js/basemap.js, which the
+     app layout already loads. --}}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 @endif

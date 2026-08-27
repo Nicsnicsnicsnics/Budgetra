@@ -2,7 +2,10 @@
 
 @if ($this->trips->isEmpty())
 {{-- Empty state --}}
-@php $isMoments = $tab === 'moments'; @endphp
+@php
+    $isMoments      = $tab === 'moments';
+    $imNeedsProfile = ! auth()->user()?->userProfile;
+@endphp
 <div class="empty-state-center" style="min-height:80vh;">
     <div style="width:64px;height:64px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
         @if ($isMoments)
@@ -11,19 +14,26 @@
         <i class="fa-solid fa-calendar-days" style="font-size:28px;color:#fff;"></i>
         @endif
     </div>
-    @if (!auth()->user()?->userProfile)
-    <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">Set up your profile first</h2>
-    <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">{{ $isMoments ? 'Complete your travel profile before planning a trip and adding moments to your trips.' : 'Complete your travel profile before planning a trip and tracking trip itineraries.' }}</p>
-    <a href="{{ route('profile.setup') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
-        <i class="fa-solid fa-user"></i> Set Up Your Profile First
-    </a>
-    @else
-    <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">{{ $isMoments ? 'No moments yet' : 'No itineraries yet' }}</h2>
-    <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">{{ $isMoments ? 'Plan a trip first to add moments for your destinations.' : 'Plan a trip first to see the itineraries for your destinations.' }}</p>
-    <a href="{{ route('trips.plan') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
-        <i class="fa-solid fa-plane"></i> Plan Your First Trip
-    </a>
+    @if ($imNeedsProfile)
+    <div class="empty-state-swap" data-empty-when="profile">
+        <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">Set up your profile first</h2>
+        <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">{{ $isMoments ? 'Complete your travel profile before planning a trip and adding moments to your trips.' : 'Complete your travel profile before planning a trip and tracking trip itineraries.' }}</p>
+        <a href="{{ route('profile.setup') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
+            <i class="fa-solid fa-user"></i> Set Up Your Profile First
+        </a>
+        {{-- Swaps in the "plan a trip" prompt below — on every tab, and for
+             good, until the profile is actually created. See
+             budgetraSkipProfileSetup() in layouts/app.blade.php. --}}
+        <button type="button" class="empty-state-skip" onclick="budgetraSkipProfileSetup()">Skip this step</button>
+    </div>
     @endif
+    <div class="empty-state-swap" @if ($imNeedsProfile) data-empty-when="skipped" @endif>
+        <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">{{ $isMoments ? 'No moments yet' : 'No itineraries yet' }}</h2>
+        <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">{{ $isMoments ? 'Plan a trip first to add moments for your destinations.' : 'Plan a trip first to see the itineraries for your destinations.' }}</p>
+        <a href="{{ route('trips.plan') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
+            <i class="fa-solid fa-plane"></i> Plan Your First Trip
+        </a>
+    </div>
 </div>
 
 @else

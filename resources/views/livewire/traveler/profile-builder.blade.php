@@ -5,8 +5,12 @@
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;align-items:center;padding:24px;">
 
 @if(!$returnTo)
+{{-- One source for the step count: the connector count is derived from it, so
+     the two can't drift apart the way they did when 7 dots had 5 connectors
+     and steps 6 and 7 ended up flush against each other. --}}
+@php $pbSteps = 7; @endphp
 <div style="display:flex;align-items:center;width:100%;max-width:560px;margin:8px 0 36px;padding:0 24px;box-sizing:border-box;">
-    @for ($i = 1; $i <= 7; $i++)
+    @for ($i = 1; $i <= $pbSteps; $i++)
         @php $state = $step > $i ? 'done' : ($step === $i ? 'current' : 'upcoming'); @endphp
         <div style="width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;
                     background:{{ $state === 'upcoming' ? 'var(--bg-white)' : 'var(--primary)' }};
@@ -19,7 +23,7 @@
                 {{ $i }}
             @endif
         </div>
-        @if($i < 6)
+        @if($i < $pbSteps)
         <div style="flex:1;height:3px;background:{{ $step > $i ? 'var(--primary)' : 'var(--border)' }};transition:background .3s ease;"></div>
         @endif
     @endfor
@@ -128,7 +132,11 @@
 @if($step === 1)
 <div wire:key="step-1"
      x-data="{
-        query: '{{ addslashes($homeCity) }}',
+        {{-- Entangled, not copied. Holding a separate Alpine copy of homeCity
+             is what let a cleared field refill itself: the copy and the
+             Livewire property could disagree, and a re-render resolved that
+             disagreement in favour of the stale value. --}}
+        query: $wire.entangle('homeCity'),
         code: '{{ addslashes(array_search($homeCity, $localDestinations) ?: '') }}',
         timer: null,
         map: null,
@@ -136,11 +144,10 @@
         open: false,
         search: '',
         selectCity(name, code) {
-            this.query = name;
+            this.query = name;      // entangled — this is the Livewire property
             this.code = code;
             this.open = false;
             this.search = '';
-            $wire.set('homeCity', name);
             this.onInput(name);
         },
         loadLeaflet() {
@@ -157,11 +164,7 @@
         async initMap() {
             await this.loadLeaflet();
             this.map = L.map(this.$refs.mapEl).setView([12.8797, 121.7740], 6);
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-                attribution: '&copy; OpenStreetMap contributors &copy; <a href=\'https://carto.com/\'>CARTO</a>',
-                subdomains: 'abcd',
-                maxZoom: 20,
-            }).addTo(this.map);
+            budgetraBasemap(this.map);
             setTimeout(() => this.map.invalidateSize(), 100);
             if (this.query.trim()) { this.geocode(this.query); }
         },
@@ -198,11 +201,11 @@
                 <i class="fa-solid fa-location-dot" style="color:var(--primary);font-size:16px;flex-shrink:0;"></i>
                 <span x-text="query ? (code ? query + ' (' + code + ')' : query) : 'Where are you from?'"
                       :style="query ? 'font-size:16px;font-weight:700;color:var(--dark);' : 'font-size:17px;font-weight:400;color:var(--muted);'"></span>
-                {{-- Clears the label, the code and the Livewire property
-                     together; clearing only one lets the value come back on
-                     the next render. --}}
+                {{-- query is the entangled Livewire property, so clearing it here
+                     clears it server-side too — no second $wire.set to fall out
+                     of step with, and no round trip whose reply can undo this. --}}
                 <button type="button" class="pb-clear" title="Clear" x-show="query" x-cloak
-                        x-on:click.stop="query=''; code=''; search=''; open=false; $wire.set('homeCity',''); $store.pbBad.home=false">
+                        x-on:click.stop="query=''; code=''; search=''; open=false; $store.pbBad.home=false">
                     <i class="fa-solid fa-xmark"></i>
                 </button>
             </div>
@@ -301,7 +304,12 @@
                 </div>
                 <span class="rv-edit" wire:click="$set('step', 1)">Edit</span>
             </div>
-            <div style="font-size:15px;font-weight:700;color:var(--dark);">{{ $homeCity ?: '—' }}</div>
+            <div style="font-size:15px;font-weight:700;color:var(--dark);">{{ $homeCity ?: "—" }}</div>
+            {{-- The country under the city: "Toronto" alone means little to
+                 anyone who doesn't already know where Toronto is. --}}
+            @if ($homeCity && \App\Support\PlaceCatalog::countryFor($homeCity))
+            <div style="font-size:11px;color:var(--muted);">{{ \App\Support\PlaceCatalog::countryFor($homeCity) }}</div>
+            @endif
         </div>
 
         {{-- Budget --}}
@@ -598,6 +606,16 @@
         @endforeach
     </div>
 </div>
+
+{{-- A save refused because the budget couldn't be converted. Sits directly
+     above the buttons so the reason is next to the control that failed. --}}
+@if($saveError)
+<div style="max-width:640px;width:100%;padding:0 24px;box-sizing:border-box;margin-bottom:14px;">
+    <p style="display:flex;align-items:center;gap:8px;margin:0;color:#e74c3c;font-size:13px;font-weight:600;">
+        <i class="fa-solid fa-circle-exclamation"></i>{{ $saveError }}
+    </p>
+</div>
+@endif
 
 {{-- Navigation --}}
 <div class="pb-nav" style="max-width:{{ in_array($step, [4, 5, 6]) ? '100%' : ($step === 3 ? '1100px' : ($step === 1 ? '1280px' : ($step === 2 ? '720px' : ($step === 7 ? '640px' : '480px')))) }};{{ in_array($step, [1, 2, 3, 4, 5, 6, 7]) ? ' padding:0 24px;' : '' }}">

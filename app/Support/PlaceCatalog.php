@@ -10,6 +10,16 @@ final class PlaceCatalog
     // City/region name (lowercase) => 3-letter IATA airport code.
     public const IATA_CODES = [
 
+        // Every city on the registration dropdown needs a code, because the
+        // planner's "Leaving from" list is now built from the traveller's own
+        // country and a city with no code can't be searched for flights.
+        'bacolod city' => 'BCD', 'zamboanga city' => 'ZAM', 'tacloban city' => 'TAC',
+        'surabaya' => 'SUB', 'wellington' => 'WLG', 'montreal' => 'YUL',
+        'manchester' => 'MAN', 'berlin' => 'BER', 'munich' => 'MUC', 'nice' => 'NCE',
+        'milan' => 'MXP', 'rio de janeiro' => 'GIG', 'mexico city' => 'MEX',
+        'cancun' => 'CUN', 'buenos aires' => 'EZE', 'lagos' => 'LOS',
+        'abuja' => 'ABV', 'cape town' => 'CPT',
+
         'manila' => 'MNL', 'pasay' => 'MNL', 'makati' => 'MNL', 'quezon city' => 'MNL',
         'paranaque' => 'MNL', 'pasig' => 'MNL', 'taguig' => 'MNL', 'las pinas' => 'MNL',
         'ncr' => 'MNL', 'metro manila' => 'MNL', 'tagaytay' => 'MNL',
@@ -152,6 +162,15 @@ final class PlaceCatalog
     // "same currency as home" rather than "unknown."
     public const DESTINATION_CURRENCIES = [
 
+        // Registration-dropdown cities that are now pickable as destinations
+        // too. Without these a Berlin or Cancun trip would record no currency
+        // at all and quietly fall back to peso pricing.
+        'surabaya' => 'IDR', 'wellington' => 'NZD', 'montreal' => 'CAD',
+        'manchester' => 'GBP', 'berlin' => 'EUR', 'munich' => 'EUR',
+        'nice' => 'EUR', 'milan' => 'EUR', 'rio de janeiro' => 'BRL',
+        'mexico city' => 'MXN', 'cancun' => 'MXN', 'buenos aires' => 'ARS',
+        'lagos' => 'NGN', 'abuja' => 'NGN', 'cape town' => 'ZAR',
+
         'singapore' => 'SGD',
         'bangkok' => 'THB', 'thailand' => 'THB', 'suvarnabhumi' => 'THB',
         'phuket' => 'THB', 'krabi' => 'THB', 'chiang mai' => 'THB',
@@ -223,6 +242,273 @@ final class PlaceCatalog
         'maldives' => 'MVR', 'male' => 'MVR',
     ];
 
+    // Destination (lowercased, same keys as DESTINATION_CURRENCIES above) =>
+    // the country it sits in, so a trip or a home address can read "Toronto,
+    // Canada" rather than a bare city name nobody outside it recognises.
+    //
+    // Spelled out rather than derived from the currency: EUR and USD each cover
+    // several countries, so inferring "Paris => wherever EUR is used" would be
+    // guesswork. Country names match COUNTRY_CURRENCIES' keys and the
+    // registration dropdown, so the two can be cross-referenced.
+    public const DESTINATION_COUNTRIES = [
+        // Philippines. Domestic trips never appear in DESTINATION_CURRENCIES
+        // (nothing to convert), but they are the destinations most travellers
+        // here actually pick, so they need a country like anywhere else.
+        'manila' => 'Philippines', 'cebu' => 'Philippines', 'cebu city' => 'Philippines',
+        'boracay' => 'Philippines', 'bohol' => 'Philippines', 'tagbilaran' => 'Philippines',
+        'palawan' => 'Philippines', 'el nido' => 'Philippines', 'coron' => 'Philippines',
+        'puerto princesa' => 'Philippines', 'davao' => 'Philippines', 'davao city' => 'Philippines',
+        'siargao' => 'Philippines', 'bacolod' => 'Philippines', 'bacolod city' => 'Philippines',
+        'iloilo' => 'Philippines', 'iloilo city' => 'Philippines', 'zamboanga' => 'Philippines',
+        'zamboanga city' => 'Philippines', 'cagayan de oro' => 'Philippines',
+        'cagayan' => 'Philippines', 'general santos' => 'Philippines',
+        'tagaytay' => 'Philippines', 'baguio' => 'Philippines', 'vigan' => 'Philippines',
+        'batangas' => 'Philippines', 'leyte' => 'Philippines', 'tacloban' => 'Philippines',
+        'tacloban city' => 'Philippines', 'dumaguete' => 'Philippines',
+        'surigao' => 'Philippines', 'cotabato' => 'Philippines', 'puerto galera' => 'Philippines',
+        'sagada' => 'Philippines', 'batanes' => 'Philippines', 'camiguin' => 'Philippines',
+        'siquijor' => 'Philippines', 'pagudpud' => 'Philippines', 'laoag' => 'Philippines',
+        'caramoan' => 'Philippines', 'philippines' => 'Philippines',
+        // Metro Manila districts and the regional airports IATA_CODES knows,
+        // so an origin or a flight leg resolves as readily as a destination.
+        'pasay' => 'Philippines', 'makati' => 'Philippines', 'quezon city' => 'Philippines',
+        'paranaque' => 'Philippines', 'pasig' => 'Philippines', 'taguig' => 'Philippines',
+        'las pinas' => 'Philippines', 'ncr' => 'Philippines', 'metro manila' => 'Philippines',
+        'mactan' => 'Philippines', 'kalibo' => 'Philippines', 'malay' => 'Philippines',
+        'tagbilaran (bohol)' => 'Philippines', 'busuanga' => 'Philippines',
+        'del carmen' => 'Philippines', 'gensan' => 'Philippines', 'basco' => 'Philippines',
+        'legazpi' => 'Philippines', 'legazpi city' => 'Philippines', 'naga' => 'Philippines',
+        'naga city' => 'Philippines', 'roxas' => 'Philippines', 'roxas city' => 'Philippines',
+        'san jose' => 'Philippines', 'ozamiz' => 'Philippines', 'dipolog' => 'Philippines',
+        'butuan' => 'Philippines', 'pagadian' => 'Philippines', 'virac' => 'Philippines',
+        'tuguegarao' => 'Philippines', 'cauayan' => 'Philippines',
+
+        // Southeast Asia
+        'bangkok' => 'Thailand', 'thailand' => 'Thailand', 'suvarnabhumi' => 'Thailand',
+        'phuket' => 'Thailand', 'krabi' => 'Thailand', 'chiang mai' => 'Thailand',
+        'bali' => 'Indonesia', 'denpasar' => 'Indonesia', 'jakarta' => 'Indonesia',
+        'indonesia' => 'Indonesia',
+        'kuala lumpur' => 'Malaysia', 'malaysia' => 'Malaysia', 'kl' => 'Malaysia',
+        'penang' => 'Malaysia', 'langkawi' => 'Malaysia', 'kota kinabalu' => 'Malaysia',
+        'singapore' => 'Singapore',
+        'ho chi minh city' => 'Vietnam', 'ho chi minh' => 'Vietnam', 'hcmc' => 'Vietnam',
+        'saigon' => 'Vietnam', 'hanoi' => 'Vietnam', 'vietnam' => 'Vietnam',
+        'da nang' => 'Vietnam',
+        'yangon' => 'Myanmar', 'myanmar' => 'Myanmar',
+        'phnom penh' => 'Cambodia', 'cambodia' => 'Cambodia', 'siem reap' => 'Cambodia',
+        'vientiane' => 'Laos', 'laos' => 'Laos',
+
+        // East Asia
+        'tokyo' => 'Japan', 'japan' => 'Japan', 'osaka' => 'Japan', 'nagoya' => 'Japan',
+        'fukuoka' => 'Japan', 'sapporo' => 'Japan', 'okinawa' => 'Japan',
+        'seoul' => 'South Korea', 'korea' => 'South Korea', 'incheon' => 'South Korea',
+        'busan' => 'South Korea',
+        'beijing' => 'China', 'china' => 'China', 'shanghai' => 'China',
+        'guangzhou' => 'China', 'shenzhen' => 'China',
+        'hong kong' => 'Hong Kong', 'macau' => 'Macau',
+        'taipei' => 'Taiwan', 'taiwan' => 'Taiwan', 'kaohsiung' => 'Taiwan',
+
+        // South Asia
+        'delhi' => 'India', 'new delhi' => 'India', 'india' => 'India', 'mumbai' => 'India',
+        'bombay' => 'India', 'bangalore' => 'India', 'bengaluru' => 'India',
+        'chennai' => 'India', 'madras' => 'India', 'kolkata' => 'India', 'hyderabad' => 'India',
+        'colombo' => 'Sri Lanka', 'sri lanka' => 'Sri Lanka',
+        'dhaka' => 'Bangladesh', 'bangladesh' => 'Bangladesh',
+        'kathmandu' => 'Nepal', 'nepal' => 'Nepal',
+        'maldives' => 'Maldives', 'male' => 'Maldives',
+
+        // Oceania
+        'sydney' => 'Australia', 'australia' => 'Australia', 'melbourne' => 'Australia',
+        'brisbane' => 'Australia', 'perth' => 'Australia',
+        'auckland' => 'New Zealand', 'new zealand' => 'New Zealand',
+
+        // Europe
+        'london' => 'United Kingdom',
+        'paris' => 'France',
+        'amsterdam' => 'Netherlands',
+        'frankfurt' => 'Germany', 'germany' => 'Germany',
+        'rome' => 'Italy', 'italy' => 'Italy',
+        'madrid' => 'Spain', 'spain' => 'Spain', 'barcelona' => 'Spain',
+        'vienna' => 'Austria', 'austria' => 'Austria',
+        'brussels' => 'Belgium', 'belgium' => 'Belgium',
+        'lisbon' => 'Portugal', 'portugal' => 'Portugal',
+        'athens' => 'Greece', 'greece' => 'Greece',
+        'helsinki' => 'Finland', 'finland' => 'Finland',
+        'zurich' => 'Switzerland', 'switzerland' => 'Switzerland',
+        'prague' => 'Czech Republic', 'czech republic' => 'Czech Republic',
+        'copenhagen' => 'Denmark', 'denmark' => 'Denmark',
+        'oslo' => 'Norway', 'norway' => 'Norway',
+        'stockholm' => 'Sweden', 'sweden' => 'Sweden',
+        'warsaw' => 'Poland', 'poland' => 'Poland',
+        'budapest' => 'Hungary', 'hungary' => 'Hungary',
+        'istanbul' => 'Turkey', 'turkey' => 'Turkey',
+        'moscow' => 'Russia', 'russia' => 'Russia',
+
+        // Middle East
+        'dubai' => 'United Arab Emirates', 'uae' => 'United Arab Emirates',
+        'abu dhabi' => 'United Arab Emirates',
+        'riyadh' => 'Saudi Arabia', 'saudi arabia' => 'Saudi Arabia', 'jeddah' => 'Saudi Arabia',
+        'doha' => 'Qatar', 'qatar' => 'Qatar',
+        'kuwait' => 'Kuwait', 'kuwait city' => 'Kuwait',
+        'muscat' => 'Oman', 'oman' => 'Oman',
+        'bahrain' => 'Bahrain',
+        'amman' => 'Jordan', 'jordan' => 'Jordan',
+        'tel aviv' => 'Israel', 'israel' => 'Israel',
+
+        // Africa
+        'cairo' => 'Egypt', 'egypt' => 'Egypt',
+        'casablanca' => 'Morocco', 'morocco' => 'Morocco',
+        'nairobi' => 'Kenya', 'kenya' => 'Kenya',
+        'johannesburg' => 'South Africa', 'south africa' => 'South Africa',
+
+        // Americas
+        'new york' => 'United States', 'new york city' => 'United States', 'nyc' => 'United States',
+        'los angeles' => 'United States', 'la' => 'United States',
+        'san francisco' => 'United States', 'chicago' => 'United States', 'miami' => 'United States',
+        'toronto' => 'Canada', 'canada' => 'Canada', 'vancouver' => 'Canada',
+        'sao paulo' => 'Brazil', 'brazil' => 'Brazil',
+    ];
+
+    /**
+     * Popular destinations offered to everyone, alongside their own country's
+     * cities. Curated rather than "every place we know" so the picker stays a
+     * shortlist; anything not here is still reachable by typing.
+     */
+    /**
+     * Domestic places the planner offers beyond the registration dropdown's
+     * shortlist. config/country_cities.php lists the handful of cities you can
+     * say you live in; these are the extra ones you can plan a trip to, and the
+     * planner already offered every Philippine one before its list was made
+     * country-aware. Without them a Filipino traveller would silently lose
+     * El Nido, Coron, Baguio and ten others.
+     */
+    private const LOCAL_CITY_EXTRAS = [
+        'Philippines' => [
+            'Cagayan de Oro', 'Dumaguete', 'El Nido', 'Coron', 'Baguio', 'Tagaytay',
+            'Vigan', 'Batanes', 'Camiguin', 'Siquijor', 'Surigao', 'Laoag', 'Legazpi',
+        ],
+    ];
+
+    private const POPULAR_DESTINATIONS = [
+        'Singapore', 'Bangkok', 'Bali', 'Tokyo', 'Seoul', 'Kuala Lumpur',
+        'Hong Kong', 'Dubai', 'London', 'Paris', 'New York', 'Sydney',
+        'Osaka', 'Taipei', 'Rome', 'Barcelona', 'Amsterdam', 'Maldives',
+        'Phuket', 'Ho Chi Minh City', 'Hanoi', 'Doha', 'Istanbul', 'Toronto',
+        'Los Angeles',
+    ];
+
+    /**
+     * The country whose cities the origin picker offers, resolved the same way
+     * cityOptionsFor() resolves it. Used as that picker's heading, since it now
+     * lists one country and "Local Destinations" would be filler.
+     */
+    public static function originCountryFor(?string $country): string
+    {
+        $countryCities = config('country_cities', []);
+
+        return ($country !== null && isset($countryCities[$country])) ? $country : 'Philippines';
+    }
+
+    /**
+     * The city list for the trip planner's From/To pickers, grouped Local and
+     * International.
+     *
+     * "Local" means the traveller's OWN country — the one they chose at
+     * registration — not the Philippines. It was hardcoded to Philippine cities,
+     * so a Canadian was asked to pick which Philippine city they were leaving
+     * from. Their home cities move into Local, and the Philippines becomes just
+     * another international destination for them.
+     *
+     * @return list<array{name: string, code: string, group: string}>
+     */
+    public static function cityOptionsFor(?string $country): array
+    {
+        $countryCities = config('country_cities', []);
+
+        // country is nullable at registration, and a country we don't stock
+        // cities for behaves the same way: fall back to the app's home market.
+        $home = ($country !== null && isset($countryCities[$country])) ? $country : 'Philippines';
+
+        $toEntry = static function (string $name, string $group): array {
+            return [
+                'name'  => $name,
+                'code'  => self::IATA_CODES[strtolower($name)] ?? '',
+                'group' => $group,
+            ];
+        };
+
+        $local = array_map(
+            fn (string $c) => $toEntry($c, 'Local'),
+            array_values(array_unique(array_merge(
+                $countryCities[$home] ?? [],
+                self::LOCAL_CITY_EXTRAS[$home] ?? []
+            )))
+        );
+
+        $localNames = array_map(fn (array $c) => strtolower($c['name']), $local);
+
+        // Everyone sees the popular list; a traveller from outside the
+        // Philippines also gets Philippine cities, which are this app's
+        // speciality and would otherwise disappear from their picker entirely.
+        $intlNames = self::POPULAR_DESTINATIONS;
+        if ($home !== 'Philippines') {
+            $intlNames = array_merge($intlNames, $countryCities['Philippines'] ?? []);
+        }
+
+        $international = [];
+        foreach ($intlNames as $name) {
+            // A city can't be both: Toronto is Local for a Canadian.
+            if (in_array(strtolower($name), $localNames, true)) continue;
+            if (isset($international[strtolower($name)])) continue;
+            $international[strtolower($name)] = $toEntry($name, 'International');
+        }
+
+        return array_merge($local, array_values($international));
+    }
+
+    /**
+     * The country a place sits in, or null when we genuinely don't know.
+     *
+     * Checks the destination catalogue first, then config/country_cities.php —
+     * which is what covers Philippine cities (they never appear as foreign
+     * destinations) and everything else offered at registration. Callers get one
+     * lookup instead of the hand-rolled loop this replaces.
+     */
+    public static function countryFor(?string $place): ?string
+    {
+        $key = strtolower(trim((string) $place));
+        if ($key === '') return null;
+
+        if (isset(self::DESTINATION_COUNTRIES[$key])) {
+            return self::DESTINATION_COUNTRIES[$key];
+        }
+
+        foreach (config('country_cities', []) as $country => $cities) {
+            foreach ($cities as $city) {
+                if (strtolower($city) === $key) return $country;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * "Toronto, Canada" — or just "Toronto" when the country isn't known, and
+     * null for no place at all so callers can fall back to their own dash.
+     */
+    public static function withCountry(?string $place): ?string
+    {
+        $place = trim((string) $place);
+        if ($place === '') return null;
+
+        $country = self::countryFor($place);
+
+        // Never "Japan, Japan": several destinations ARE their country.
+        if ($country === null || strcasecmp($country, $place) === 0) return $place;
+
+        return "{$place}, {$country}";
+    }
+
     // Country name (matching config/country_cities.php's keys, and the
     // registration form's Country dropdown) => 3-letter ISO currency code.
     public const COUNTRY_CURRENCIES = [
@@ -246,6 +532,15 @@ final class PlaceCatalog
         'EUR' => '€', 'BRL' => 'R$', 'MXN' => 'MX$', 'ARS' => 'AR$',
         'SAR' => 'SAR ', 'AED' => 'AED ', 'EGP' => 'EGP ',
         'NGN' => '₦', 'ZAR' => 'R', 'KES' => 'KSh ',
+        // Destinations outside COUNTRY_CURRENCIES. Without these, anything
+        // priced in them fell back to a bare code — or worse, to '₱'.
+        'HKD' => 'HK$', 'TWD' => 'NT$', 'CHF' => 'CHF ', 'CZK' => 'Kč',
+        'DKK' => 'kr ',  'NOK' => 'kr ',  'SEK' => 'kr ',  'PLN' => 'zł',
+        'HUF' => 'Ft',   'TRY' => '₺',    'RUB' => '₽',    'ILS' => '₪',
+        'BDT' => '৳',    'LKR' => 'Rs ',  'NPR' => '₨',    'MVR' => 'Rf ',
+        'KHR' => '៛',    'LAK' => '₭',    'MMK' => 'K ',   'MOP' => 'MOP$',
+        'BHD' => 'BD ',  'JOD' => 'JD ',  'KWD' => 'KD ',  'OMR' => 'OMR ',
+        'QAR' => 'QR ',  'MAD' => 'MAD ',
     ];
 
     // 3-letter ISO currency code => full display name, same coverage as
@@ -260,6 +555,15 @@ final class PlaceCatalog
         'ARS' => 'Argentine pesos', 'SAR' => 'Saudi riyals', 'AED' => 'UAE dirhams',
         'EGP' => 'Egyptian pounds', 'NGN' => 'Nigerian naira', 'ZAR' => 'South African rand',
         'KES' => 'Kenyan shillings',
+        'HKD' => 'Hong Kong dollars', 'TWD' => 'Taiwan dollars', 'CHF' => 'Swiss francs',
+        'CZK' => 'Czech koruna', 'DKK' => 'Danish kroner', 'NOK' => 'Norwegian kroner',
+        'SEK' => 'Swedish kronor', 'PLN' => 'Polish zloty', 'HUF' => 'Hungarian forint',
+        'TRY' => 'Turkish lira', 'RUB' => 'Russian rubles', 'ILS' => 'Israeli shekels',
+        'BDT' => 'Bangladeshi taka', 'LKR' => 'Sri Lankan rupees', 'NPR' => 'Nepalese rupees',
+        'MVR' => 'Maldivian rufiyaa', 'KHR' => 'Cambodian riel', 'LAK' => 'Lao kip',
+        'MMK' => 'Myanmar kyat', 'MOP' => 'Macanese pataca', 'BHD' => 'Bahraini dinars',
+        'JOD' => 'Jordanian dinars', 'KWD' => 'Kuwaiti dinars', 'OMR' => 'Omani rials',
+        'QAR' => 'Qatari riyals', 'MAD' => 'Moroccan dirhams',
     ];
 
     // City/region name (lowercase) => synthetic trip-package data used as

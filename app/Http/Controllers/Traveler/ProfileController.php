@@ -12,20 +12,13 @@ class ProfileController extends Controller
         $user = auth()->user();
         $profile = $user->userProfile;
 
-        $homeCountry = null;
-        if ($profile && $profile->home_city) {
-            foreach (config('country_cities') as $country => $cities) {
-                if (in_array($profile->home_city, $cities, true)) {
-                    $homeCountry = $country;
-                    break;
-                }
-            }
-        }
-
+        // The country lookup that used to live here as a loop over
+        // config('country_cities') now sits in PlaceCatalog::countryFor(), which
+        // also knows the 154 destinations that config never listed. The view
+        // calls it directly, so nothing needs passing down.
         return view('traveler.profile.edit', [
-            'user'        => $user,
-            'profile'     => $profile,
-            'homeCountry' => $homeCountry,
+            'user'    => $user,
+            'profile' => $profile,
         ]);
     }
 

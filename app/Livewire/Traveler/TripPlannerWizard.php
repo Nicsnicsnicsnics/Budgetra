@@ -392,8 +392,13 @@ class TripPlannerWizard extends Component
     public string $emergencyError = '';
     public float  $budgetLimit    = 0;
     public string $tripCurrency        = '';
+
+    /** The most trips.budget_limit — decimal(10,2) — can physically hold. */
+    private const MAX_PESO_BUDGET = 99_999_999.99;
     public bool   $emergencyConverted  = false;
     public bool    $showCurrencyConvertModal = false;
+    /** Declining is an answer — don't re-prompt on a second run at the summary. */
+    public bool    $currencyConversionAsked  = false;
     public ?string $destinationCurrencyCode  = null;
     public ?float  $convertedBudget          = null;
     public string  $currencyConvertError     = '';
@@ -500,7 +505,12 @@ class TripPlannerWizard extends Component
                 $this->planningMode    = 'manual';
                 $this->manualFrom      = (string) ($draftTrip->origin ?? '');
                 $this->manualTo        = $draftTrip->destination !== 'Draft' ? (string) $draftTrip->destination : '';
-                $this->manualBudgetMin = $draftTrip->budget_limit > 0 ? (string) (int) $draftTrip->budget_limit : '';
+                // Show back what was typed, in the currency it was typed in —
+                // budget_limit is the converted peso figure, and re-seeding the
+                // field with that would re-convert it on the next save.
+                $this->tripCurrency    = (string) ($draftTrip->budget_currency ?: $this->tripCurrency);
+                $seedBudget            = $draftTrip->budget_local ?? $draftTrip->budget_limit;
+                $this->manualBudgetMin = $seedBudget > 0 ? (string) (int) $seedBudget : '';
                 $this->manualBudgetMax = $this->manualBudgetMin;
                 $this->startDate       = (string) $draftTrip->start_date?->toDateString();
                 $this->endDate         = (string) $draftTrip->end_date?->toDateString();
@@ -1688,18 +1698,58 @@ class TripPlannerWizard extends Component
         $this->emergencyConverted = false;
     }
 
+    /**
+     * The currency the budget field is labelled in, and therefore the currency a
+     * typed budget means. A trip carried over from TARA keeps whatever currency
+     * that conversation was held in; otherwise it's the traveller's own, from the
+     * country they registered with.
+     */
+    public function budgetCurrency(): string
+    {
+        return $this->tripCurrency !== '' ? $this->tripCurrency : home_currency();
+    }
+
+    public function budgetCurrencySymbol(): string
+    {
+        $code = $this->budgetCurrency();
+
+        return PlaceCatalog::CURRENCY_SYMBOLS[$code] ?? $code . ' ';
+    }
+
+    /**
+     * The currency every amount in the wizard is shown in.
+     *
+     * While planning that is the traveller's OWN currency — a Canadian prices
+     * flights, dining and the running total in CAD, not pesos. Once they accept
+     * the conversion at save time it becomes the destination's currency, so the
+     * summary and estimated cost read in what they will actually be spending.
+     */
+    public function displayCurrency(): string
+    {
+        if ($this->convertedBudget !== null && $this->destinationCurrencyCode !== null) {
+            return $this->destinationCurrencyCode;
+        }
+
+        return $this->budgetCurrency();
+    }
+
     public function tripDisplayAmount(int|float $pesoAmount): string
     {
-        if ($this->tripCurrency === '' || $this->tripCurrency === 'PHP') {
+        $code = $this->displayCurrency();
+
+        if ($code === '' || $code === 'PHP') {
             return '₱' . number_format($pesoAmount);
         }
 
-        $rate = (new CurrencyConverterService())->rateToPhp($this->tripCurrency);
+        $rate = (new CurrencyConverterService())->rateToPhp($code);
         if ($rate === null) {
             return '₱' . number_format($pesoAmount);
         }
 
-        $symbol = PlaceCatalog::CURRENCY_SYMBOLS[$this->tripCurrency] ?? '₱';
+        // Falls back to the code, never to '₱': the amount has already been
+        // divided out of pesos by this point, so a peso sign here labels a
+        // foreign figure as pesos. Most destination currencies have no symbol.
+        $symbol = PlaceCatalog::CURRENCY_SYMBOLS[$code] ?? $code . ' ';
         return $symbol . number_format($pesoAmount / $rate);
     }
 
@@ -1746,13 +1796,10 @@ class TripPlannerWizard extends Component
         // under here.
         $this->emergencyError = '';
 
-        $destCode = $this->destinationCurrencyFor($this->manualTo);
-        if ($destCode !== null) {
-            $this->destinationCurrencyCode  = $destCode;
-            $this->showCurrencyConvertModal = true;
-            return;
-        }
-
+        // The conversion prompt used to fire here, before the itinerary even
+        // existed. It now waits until "Save Itinerary" (see continueItinerary),
+        // so the traveller plans in their own currency and is asked about the
+        // destination's only once there is a finished trip to convert.
         $this->step = 7;
     }
 
@@ -1762,28 +1809,58 @@ class TripPlannerWizard extends Component
     // display" rule used everywhere else in this app.
     public function acceptCurrencyConversion(): void
     {
-        $budget = (int) preg_replace('/[^\d]/', '', $this->manualBudgetMax ?: $this->manualBudgetMin);
+        // The typed budget is in the traveller's own currency, so it goes to
+        // pesos first — the one ledger everything is measured in — and only then
+        // into the destination's. Converting CAD straight to JPY with a
+        // PHP-denominated rate would be nonsense.
+        $typed      = (float) preg_replace('/[^\d.]/', '', $this->manualBudgetMax ?: $this->manualBudgetMin);
+        $pesoBudget = $this->budgetInPesos($typed);
 
-        $converted = $this->convertPesosToCurrency($this->destinationCurrencyCode, (float) $budget);
+        if ($pesoBudget === null) {
+            $this->currencyConvertError = "I couldn't fetch the live exchange rate just now — please try again in a moment.";
+            return;
+        }
+
+        $converted = $this->convertPesosToCurrency($this->destinationCurrencyCode, $pesoBudget);
 
         if ($converted === null) {
             $this->currencyConvertError = "I couldn't fetch the live exchange rate just now — please try again in a moment.";
             return;
         }
 
-        $this->convertedBudget      = $converted;
-        $this->currencyConvertError = '';
-
+        // Setting this is what flips displayCurrency() over to the destination,
+        // so the summary and estimated cost re-render in it.
+        $this->convertedBudget          = $converted;
+        $this->currencyConvertError     = '';
+        $this->currencyConversionAsked  = true;
         $this->showCurrencyConvertModal = false;
-        $this->step = 7;
+
+        $this->goToSummary();
     }
 
     public function declineCurrencyConversion(): void
     {
+        // Everything stays in whatever they planned in — their own currency.
         $this->convertedBudget          = null;
         $this->currencyConvertError     = '';
+        $this->currencyConversionAsked  = true;
         $this->showCurrencyConvertModal = false;
-        $this->step = 7;
+
+        $this->goToSummary();
+    }
+
+    /**
+     * A budget typed in the traveller's own currency, expressed in pesos.
+     * Null when no live rate is reachable — no guessed rates anywhere.
+     */
+    private function budgetInPesos(float $typed): ?float
+    {
+        $code = $this->budgetCurrency();
+        if ($code === 'PHP' || $typed <= 0) return $typed;
+
+        $rate = (new CurrencyConverterService())->rateToPhp($code);
+
+        return $rate === null ? null : round($typed * $rate, 2);
     }
 
     // Gemini → Groq → Cerebras → Mistral → OpenRouter — shared by every
@@ -1898,6 +1975,18 @@ class TripPlannerWizard extends Component
             $this->generateItineraryLeg2();
             return;
         }
+
+        // Ask about the destination's currency here, on the way to the summary:
+        // the trip is complete, so the traveller is deciding how to READ a
+        // finished plan rather than answering a hypothetical mid-flow. Asked
+        // once — declining is an answer, and shouldn't be re-prompted.
+        $destCode = $this->destinationCurrencyFor($this->manualTo);
+        if ($destCode !== null && !$this->currencyConversionAsked) {
+            $this->destinationCurrencyCode  = $destCode;
+            $this->showCurrencyConvertModal = true;
+            return;
+        }
+
         $this->goToSummary();
     }
 
@@ -2290,8 +2379,33 @@ class TripPlannerWizard extends Component
         if ($this->isSaving) return;
         $this->isSaving = true;
 
-        $rawBudget = $this->manualBudgetMax ?: $this->manualBudgetMin;
-        $budget    = (float) preg_replace('/[^\d.]/', '', $rawBudget);
+        $rawBudget  = $this->manualBudgetMax ?: $this->manualBudgetMin;
+        $typedBudget = (float) preg_replace('/[^\d.]/', '', $rawBudget);
+
+        // The budget field is labelled in the traveller's own currency (from the
+        // country they registered with), so a Canadian typing 3,000 means CAD
+        // 3,000 — not ₱3,000, which is what this used to record. Everything
+        // downstream is pesos, so convert once, here.
+        $budgetCurrency = $this->budgetCurrency();
+        $budget         = $this->budgetInPesos($typedBudget);
+        $budgetLocal    = ($budgetCurrency !== 'PHP' && $typedBudget > 0) ? $typedBudget : null;
+
+        if ($budget === null) {
+            // No guessed rates: stop rather than bank a foreign number as pesos.
+            $this->isSaving = false;
+            $this->emergencyError = "I couldn't fetch the {$budgetCurrency} exchange rate just now — please try saving again in a moment.";
+            return;
+        }
+
+        // trips.budget_limit is decimal(10,2). Multiplying by a rate can push a
+        // high-value currency past that — anything over about £1.2M today — and
+        // the column would raise a raw database error rather than say anything.
+        if ($budget > self::MAX_PESO_BUDGET) {
+            $this->isSaving = false;
+            $this->emergencyError = 'That budget is larger than Budgetra can record. Please enter a smaller amount.';
+            return;
+        }
+
         $tripStart = $this->startDate ?: now()->toDateString();
         $tripEnd   = $this->endDate   ?: now()->toDateString();
 
@@ -2394,14 +2508,16 @@ class TripPlannerWizard extends Component
         // destination currency regardless of whether that modal was shown,
         // accepted, or declined during planning (the modal only controls
         // what got SHOWN during the flow, not what the trip permanently is).
+        // Only the code is stored. destination_budget used to be written here as
+        // well — a peso figure divided by whatever rate happened to be live at
+        // save time — and nothing ever read it back. Cards convert on demand
+        // from destination_currency instead, which stays correct as rates move.
         $destCurrencyCode = $this->destinationCurrencyFor($leg1DestName);
-        $destBudget       = $this->convertPesosToCurrency($destCurrencyCode, $budget);
 
         $trip = Trip::create([
             'user_id'          => auth()->id(),
             'destination'      => $leg1DestName,
             'destination_currency' => $destCurrencyCode,
-            'destination_budget'   => $destBudget,
             // Multi-city trips are named after both destinations so the
             // trip is identifiable at a glance on the Saved Trips / Savings
             // Goals cards instead of only showing leg 1's city.
@@ -2409,6 +2525,11 @@ class TripPlannerWizard extends Component
             'start_date'       => $tripStart,
             'end_date'         => $tripEnd,
             'budget_limit'     => $budget ?: 0,
+            // What the traveller actually typed, so reopening the trip shows
+            // their own number back instead of the peso figure re-divided by
+            // whatever rate is live that day.
+            'budget_currency'  => $budgetCurrency,
+            'budget_local'     => $budgetLocal,
             'travel_type'      => 'Solo',
             'num_travelers'    => 1,
             'total_cost'       => $totalCost,
@@ -2738,6 +2859,18 @@ class TripPlannerWizard extends Component
 
         if (!$hasAllFields) return;
 
+        // The budget field is typed in the traveller's own currency, so the raw
+        // number is not pesos. This used to store it as though it were, leaving
+        // the draft disagreeing with what saveItinerary() writes for the very
+        // same input — a Canadian's C$3,000 draft read as ₱3,000.
+        $budgetCurrency = $this->budgetCurrency();
+        $pesoBudget     = $this->budgetInPesos($budget);
+
+        // A draft is a background convenience, so an unreachable rate just means
+        // "don't save one yet" rather than interrupting the traveller. The real
+        // save converts (or refuses) with a message of its own.
+        if ($pesoBudget === null || $pesoBudget > self::MAX_PESO_BUDGET) return;
+
         $data = [
             'user_id'          => auth()->id(),
             'destination'      => $this->manualTo,
@@ -2746,7 +2879,9 @@ class TripPlannerWizard extends Component
             'destination_code' => $this->resolveCode($this->manualTo),
             'start_date'       => $this->startDate,
             'end_date'         => $this->endDate,
-            'budget_limit'     => $budget,
+            'budget_limit'     => $pesoBudget,
+            'budget_currency'  => $budgetCurrency,
+            'budget_local'     => $budgetCurrency !== 'PHP' ? $budget : null,
             'travel_type'      => 'Solo',
             'num_travelers'    => 1,
             'status'           => 'draft',

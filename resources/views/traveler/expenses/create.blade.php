@@ -268,7 +268,10 @@
                                         class="form-control exp-select-native {{ $errors->has('trip_id') ? 'is-invalid' : '' }}" required>
                                     <option value="">Select trip</option>
                                     @foreach ($trips as $trip)
+                                    {{-- data-currency lets the amount field follow the
+                                         trip: pick the Japan trip and it switches to ¥. --}}
                                     <option value="{{ $trip->id }}"
+                                        data-currency="{{ $trip->destination_currency ?: 'PHP' }}"
                                         {{ (string) $tripSel === (string) $trip->id ? 'selected' : '' }}>
                                         {{ $tripLabel($trip) }}
                                     </option>
@@ -294,14 +297,29 @@
                         @error('trip_id')<div class="form-error">{{ $message }}</div>@enderror
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="amount">Amount ({{ currency_symbol() }})</label>
-                        <div class="input-wrapper">
-                            <span class="input-icon"><i class="fa-solid fa-coins"></i></span>
-                            <input type="number" id="amount" name="amount" step="0.01" min="0.01"
-                                   value="{{ old('amount') }}"
-                                   class="form-control {{ $errors->has('amount') ? 'is-invalid' : '' }}"
-                                   placeholder="0.00" required>
+                        {{-- Type what the receipt says. A traveller in Japan enters
+                             ¥3,500 and Budgetra converts to pesos on save, keeping
+                             the yen figure alongside — this field used to be peso-only,
+                             so every foreign purchase had to be hand-converted. --}}
+                        <label class="form-label" for="amount">Amount</label>
+                        <div style="display:flex;gap:8px;">
+                            <select name="amount_currency" id="amount_currency"
+                                    class="form-control" style="max-width:120px;flex-shrink:0;">
+                                @foreach (\App\Support\PlaceCatalog::CURRENCY_SYMBOLS as $code => $symbol)
+                                <option value="{{ $code }}" {{ old('amount_currency', $defaultCurrency ?? 'PHP') === $code ? 'selected' : '' }}>
+                                    {{ $symbol }} {{ $code }}
+                                </option>
+                                @endforeach
+                            </select>
+                            <div class="input-wrapper" style="flex:1;">
+                                <span class="input-icon"><i class="fa-solid fa-coins"></i></span>
+                                <input type="number" id="amount" name="amount" step="0.01" min="0.01"
+                                       value="{{ old('amount') }}"
+                                       class="form-control {{ $errors->has('amount') ? 'is-invalid' : '' }}"
+                                       placeholder="0.00" required>
+                            </div>
                         </div>
+                        <div class="text-muted" style="font-size:11px;margin-top:6px;" id="amount-currency-hint"></div>
                         @error('amount')<div class="form-error">{{ $message }}</div>@enderror
                     </div>
                 </div>
@@ -488,10 +506,46 @@
     var dateInput      = document.getElementById('expense_date');
     var descInput      = document.getElementById('description');
     var categorySelect = document.getElementById('category');
+    var currencySelect = document.getElementById('amount_currency');
+    var tripSelect     = document.getElementById('trip_id');
+    var currencyHint   = document.getElementById('amount-currency-hint');
     var promptEl       = document.getElementById('dropzonePrompt');
     var previewWrap    = document.getElementById('dropzonePreview');
     var previewImg     = document.getElementById('dropzonePreviewImg');
     var clearBtn       = document.getElementById('dropzoneClear');
+
+    // Follow the trip: picking the Japan trip switches the amount to ¥, because
+    // that's what the traveller is actually handing over there. Only moves the
+    // selector while it still matches the previous trip's currency, so a manual
+    // choice is never overwritten.
+    if (tripSelect && currencySelect) {
+        var lastTripCurrency = (tripSelect.selectedOptions[0] || {}).dataset
+            ? tripSelect.selectedOptions[0].dataset.currency : null;
+
+        tripSelect.addEventListener('change', function () {
+            var opt = tripSelect.selectedOptions[0];
+            var next = opt && opt.dataset ? opt.dataset.currency : null;
+            if (next && currencySelect.value === lastTripCurrency) {
+                currencySelect.value = next;
+                currencySelect.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            lastTripCurrency = next;
+        });
+    }
+
+    // Say plainly what will be stored, so "3500" in a ¥ field is never mistaken
+    // for ₱3,500 — the exact confusion this whole feature exists to remove.
+    function updateCurrencyHint() {
+        if (!currencyHint || !currencySelect) return;
+        var code = currencySelect.value;
+        currencyHint.textContent = (code && code !== 'PHP')
+            ? 'Entered in ' + code + ' — converted to pesos at today’s rate when saved.'
+            : '';
+    }
+    if (currencySelect) {
+        currencySelect.addEventListener('change', updateCurrencyHint);
+        updateCurrencyHint();
+    }
 
     if (!dropZone) return; // no trips: the form isn't on the page at all
 
@@ -549,6 +603,9 @@
         var formData = new FormData();
         formData.append('receipt', file);
         formData.append('_token', document.querySelector('meta[name="csrf-token"]').content);
+        // Tells the scan which trip this receipt is from, so an ambiguous symbol
+        // ('¥' is both yen and yuan) resolves to the destination's currency.
+        if (tripSelect && tripSelect.value) formData.append('trip_id', tripSelect.value);
 
         fetch('/expenses/ocr', {
             method: 'POST',
@@ -577,6 +634,13 @@
                 scanOverlay.classList.remove('is-active');
                 dropZone.classList.remove('ocr-active');
                 if (data.amount)      { amountInput.value = data.amount; markOcrFilled(amountInput); }
+                // The scan reports which currency the receipt was printed in, so
+                // a ¥ receipt lands as yen rather than as the same number in pesos.
+                if (data.currency && currencySelect) {
+                    currencySelect.value = data.currency;
+                    currencySelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    markOcrFilled(currencySelect);
+                }
                 if (data.date)        { dateInput.value   = data.date;   markOcrFilled(dateInput); }
                 if (data.description) { descInput.value   = data.description; markOcrFilled(descInput); }
                 if (data.category && categorySelect) {

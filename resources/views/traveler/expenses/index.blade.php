@@ -80,23 +80,31 @@
 
 @if ($trips->isEmpty())
 {{-- No trips empty state --}}
+@php $exNeedsProfile = ! auth()->user()?->userProfile; @endphp
 <div class="empty-state-center" style="min-height:80vh;">
     <div style="width:64px;height:64px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
         <i class="fa-solid fa-receipt" style="font-size:28px;color:#fff;"></i>
     </div>
-    @if (!auth()->user()?->userProfile)
-    <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;">Set up your profile first</h2>
-    <p class="text-muted" style="margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Complete your travel profile before planning a trip and logging expenses.</p>
-    <a href="{{ route('profile.setup') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
-        <i class="fa-solid fa-user"></i> Set Up Your Profile First
-    </a>
-    @else
-    <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;">No expenses yet</h2>
-    <p class="text-muted" style="margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Plan a trip first before logging your expenses.</p>
-    <a href="{{ route('trips.plan') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
-        <i class="fa-solid fa-plane"></i> Plan Your First Trip
-    </a>
+    @if ($exNeedsProfile)
+    <div class="empty-state-swap" data-empty-when="profile">
+        <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;">Set up your profile first</h2>
+        <p class="text-muted" style="margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Complete your travel profile before planning a trip and logging expenses.</p>
+        <a href="{{ route('profile.setup') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
+            <i class="fa-solid fa-user"></i> Set Up Your Profile First
+        </a>
+        {{-- Swaps in the "plan a trip" prompt below — on every tab, and for
+             good, until the profile is actually created. See
+             budgetraSkipProfileSetup() in layouts/app.blade.php. --}}
+        <button type="button" class="empty-state-skip" onclick="budgetraSkipProfileSetup()">Skip this step</button>
+    </div>
     @endif
+    <div class="empty-state-swap" @if ($exNeedsProfile) data-empty-when="skipped" @endif>
+        <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;">No expenses yet</h2>
+        <p class="text-muted" style="margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Plan a trip first before logging your expenses.</p>
+        <a href="{{ route('trips.plan') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
+            <i class="fa-solid fa-plane"></i> Plan Your First Trip
+        </a>
+    </div>
 </div>
 
 @else
@@ -370,7 +378,16 @@
                         @endunless
                     </div>
                 </div>
-                <div class="txn-amount">{{ currency_symbol() }}{{ number_format($expense->amount, 0) }}</div>
+                {{-- A foreign expense shows what was actually handed over, with the
+                     peso figure the budget is measured against underneath. --}}
+                <div class="txn-amount">
+                    {{ $expense->isForeign() ? $expense->originalAmountLabel() : currency_symbol() . number_format($expense->amount, 0) }}
+                </div>
+                @if ($expense->isForeign())
+                <div class="text-muted" style="font-size:11px;text-align:right;">
+                    ≈ {{ currency_symbol() }}{{ number_format($expense->amount, 0) }}
+                </div>
+                @endif
                 <div class="txn-actions">
                     {{-- Everyone on the trip can edit/delete its expenses; the
                          controller gates on trip access rather than authorship,
