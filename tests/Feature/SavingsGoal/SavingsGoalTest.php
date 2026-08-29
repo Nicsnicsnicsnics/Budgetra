@@ -20,7 +20,9 @@ class SavingsGoalTest extends TestCase
     public function test_user_can_create_savings_goal(): void
     {
         $user = User::factory()->create();
+        $trip = Trip::factory()->create(['user_id' => $user->id]);
         $this->actingAs($user)->post('/savings', [
+            'trip_id'         => $trip->id,
             'goal_name'       => 'Boracay Trip Fund',
             'target_amount'   => 50000,
             'current_savings' => 5000,
@@ -28,6 +30,7 @@ class SavingsGoalTest extends TestCase
         ])->assertRedirect(route('savings.index'));
 
         $this->assertDatabaseHas('savings_goals', [
+            'trip_id'      => $trip->id,
             'goal_name'    => 'Boracay Trip Fund',
             'user_id'      => $user->id,
             'target_amount' => 50000,
@@ -37,15 +40,21 @@ class SavingsGoalTest extends TestCase
     public function test_user_can_make_deposit(): void
     {
         $user = User::factory()->create();
+        $trip = Trip::factory()->create(['user_id' => $user->id]);
         $goal = SavingsGoal::create([
             'user_id'         => $user->id,
+            'trip_id'         => $trip->id,
             'goal_name'       => 'Test Fund',
             'target_amount'   => 10000,
             'current_savings' => 1000,
             'deadline'        => '2030-12-31',
         ]);
 
-        $this->actingAs($user)->patch("/savings/{$goal->id}/deposit", ['amount' => 500])->assertRedirect();
+        \Livewire\Livewire::actingAs($user)
+            ->test(\App\Livewire\Traveler\SavingsGoalManager::class, ['goal' => $goal])
+            ->set('depositAmount', 500)
+            ->call('submitDeposit');
+
         $this->assertDatabaseHas('savings_goals', ['id' => $goal->id, 'current_savings' => 1500]);
     }
 
@@ -53,8 +62,9 @@ class SavingsGoalTest extends TestCase
     {
         $user  = User::factory()->create();
         $other = User::factory()->create();
+        $trip  = Trip::factory()->create(['user_id' => $other->id]);
         $goal  = SavingsGoal::create([
-            'user_id' => $other->id, 'goal_name' => 'Other', 'target_amount' => 1000, 'current_savings' => 0, 'deadline' => '2030-12-31',
+            'user_id' => $other->id, 'trip_id' => $trip->id, 'goal_name' => 'Other', 'target_amount' => 1000, 'current_savings' => 0, 'deadline' => '2030-12-31',
         ]);
 
         $this->actingAs($user)->get("/savings/{$goal->id}/edit")->assertStatus(403);
@@ -63,8 +73,9 @@ class SavingsGoalTest extends TestCase
     public function test_user_can_delete_goal(): void
     {
         $user = User::factory()->create();
+        $trip = Trip::factory()->create(['user_id' => $user->id]);
         $goal = SavingsGoal::create([
-            'user_id' => $user->id, 'goal_name' => 'Delete me', 'target_amount' => 1000, 'current_savings' => 0, 'deadline' => '2030-12-31',
+            'user_id' => $user->id, 'trip_id' => $trip->id, 'goal_name' => 'Delete me', 'target_amount' => 1000, 'current_savings' => 0, 'deadline' => '2030-12-31',
         ]);
 
         $this->actingAs($user)->delete("/savings/{$goal->id}")->assertRedirect(route('savings.index'));

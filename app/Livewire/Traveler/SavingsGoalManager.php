@@ -37,56 +37,170 @@ class SavingsGoalManager extends Component
         $this->showProjection = false;
     }
 
+    public function homeCurrency(): string
+    {
+        return home_currency();
+    }
+
+    public function homeCurrencySymbol(): string
+    {
+        return home_currency_symbol();
+    }
+
+    public function destinationCurrency(): ?string
+    {
+        $trip = $this->goal->trip;
+        if (!$trip) return null;
+
+        if (!empty($trip->destination_currency) && $trip->destination_currency !== 'PHP') {
+            return $trip->destination_currency;
+        }
+
+        if (!empty($trip->destination)) {
+            $code = PlaceCatalog::DESTINATION_CURRENCIES[strtolower(trim($trip->destination))] ?? null;
+            if ($code && $code !== 'PHP') {
+                return $code;
+            }
+        }
+
+        return null;
+    }
+
+    public function destinationCurrencySymbol(): ?string
+    {
+        $code = $this->destinationCurrency();
+        if (!$code) return null;
+        return PlaceCatalog::CURRENCY_SYMBOLS[$code] ?? $code . ' ';
+    }
+
+    public function homeRate(): ?float
+    {
+        $code = $this->homeCurrency();
+        if ($code === 'PHP') return 1.0;
+        return (new CurrencyConverterService())->rateToPhp($code);
+    }
+
+    public function destinationRate(): ?float
+    {
+        $code = $this->destinationCurrency();
+        if (!$code || $code === 'PHP') return 1.0;
+        return (new CurrencyConverterService())->rateToPhp($code);
+    }
+
+    public function hasCurrencyConversion(): bool
+    {
+        $destCode = $this->destinationCurrency();
+        $homeCode = $this->homeCurrency();
+        if (!$destCode || $destCode === $homeCode) {
+            return false;
+        }
+        return $this->destinationRate() !== null;
+    }
+
+    public function conversionRateLabel(): ?string
+    {
+        if (!$this->hasCurrencyConversion()) return null;
+
+        $destCode = $this->destinationCurrency();
+        $homeCode = $this->homeCurrency();
+        $destRate = $this->destinationRate();
+        $homeRate = $this->homeRate() ?? 1.0;
+
+        if (!$destRate || !$homeRate) return null;
+
+        $rateInHome = $destRate / $homeRate;
+        $homeSymbol = $this->homeCurrencySymbol();
+
+        if ($rateInHome >= 1) {
+            $formatted = number_format($rateInHome, 2);
+        } elseif ($rateInHome >= 0.0001) {
+            $formatted = rtrim(rtrim(number_format($rateInHome, 4), '0'), '.');
+            if (strlen(explode('.', $formatted)[1] ?? '') < 2) {
+                $formatted = number_format($rateInHome, 2);
+            }
+        } else {
+            $formatted = rtrim(rtrim(number_format($rateInHome, 6), '0'), '.');
+        }
+
+        return "1 {$destCode} ≈ {$homeSymbol}{$formatted} {$homeCode}";
+    }
+
+    public function displayHomeAmount(float $pesoAmount): string
+    {
+        $code   = $this->homeCurrency();
+        $symbol = $this->homeCurrencySymbol();
+        if ($code === 'PHP') {
+            return '₱' . number_format($pesoAmount, 2);
+        }
+        $rate = $this->homeRate();
+        if ($rate === null) {
+            return '₱' . number_format($pesoAmount, 2);
+        }
+        return $symbol . number_format($pesoAmount / $rate, 2);
+    }
+
+    public function displayDestinationAmount(float $pesoAmount): ?string
+    {
+        $destCode = $this->destinationCurrency();
+        if (!$destCode) return null;
+        $rate = $this->destinationRate();
+        if ($rate === null) return null;
+        $symbol = $this->destinationCurrencySymbol();
+        return $symbol . number_format($pesoAmount / $rate, 2);
+    }
+
+    public function displayAmount(float $pesoAmount): string
+    {
+        return $this->displayHomeAmount($pesoAmount);
+    }
+
     public function submitDeposit(): void
     {
         abort_if($this->goal->user_id !== auth()->id(), 403);
 
-        // Cap against the trip's total budget when it has one (matches the
-        // progress bar/card, which also prefers total_cost over the goal's
-        // own target_amount) — falls back to the goal's target otherwise.
+        $homeCode = $this->homeCurrency();
+        $homeRate = $this->homeRate() ?? 1.0;
         $targetCost = $this->goal->trip?->total_cost ?? $this->goal->target_amount;
-        $remaining  = max(0, $targetCost - $this->goal->current_savings);
+        $remainingPesos = max(0, $targetCost - $this->goal->current_savings);
+        $remainingHome  = $homeRate > 0 ? round($remainingPesos / $homeRate, 2) : $remainingPesos;
 
         $this->validate([
             'depositAmount' => [
                 'required', 'numeric', 'min:0.01',
-                'max:' . $remaining,
+                'max:' . max(0.01, $remainingHome),
             ],
         ], [
-            'depositAmount.max' => 'Amount can\'t exceed the remaining ₱' . number_format($remaining, 2) . ' needed to reach this goal.',
+            'depositAmount.max' => 'Amount can\'t exceed the remaining ' . $this->homeCurrencySymbol() . number_format($remainingHome, 2) . ' needed to reach this goal.',
         ]);
 
-        // No stored "completed" flag on the goal, so detect "just reached it on
-        // this deposit" by comparing before/after — that's also what naturally
-        // stops this from re-firing on every subsequent deposit past the goal.
+        $pesoDeposit = $homeCode === 'PHP' ? (float) $this->depositAmount : round((float) $this->depositAmount * $homeRate, 2);
+
         $wasCompleted = $this->goal->current_savings >= $targetCost;
 
-        $this->goal->increment('current_savings', $this->depositAmount);
+        $this->goal->increment('current_savings', $pesoDeposit);
         $this->goal->refresh();
+
+        $savedHomeFormatted = $this->displayHomeAmount($this->goal->current_savings);
+        $depositHomeFormatted = $this->homeCurrencySymbol() . number_format($this->depositAmount, 2);
+        $targetHomeFormatted = $this->displayHomeAmount($targetCost);
 
         if (!$wasCompleted && $this->goal->current_savings >= $targetCost) {
             Notification::create([
                 'user_id' => $this->goal->user_id,
                 'trip_id' => $this->goal->trip_id,
                 'type'    => 'savings_goal_reached',
-                'message' => "Congratulations! You've reached your savings goal \"{$this->goal->goal_name}\" — ₱"
-                    . number_format($this->goal->current_savings, 2) . ' saved!',
+                'message' => "Congratulations! You've reached your savings goal \"{$this->goal->goal_name}\" — {$savedHomeFormatted} saved!",
                 'is_read' => false,
             ]);
         } elseif (!$wasCompleted) {
-            // Goal-reached already gets its own celebratory notification
-            // above — this covers every other deposit, the same way
-            // ExpenseObserver notifies on every logged expense.
-            $pct = $this->goal->target_amount > 0
-                ? min(100, round($this->goal->current_savings / $this->goal->target_amount * 100))
+            $pct = $targetCost > 0
+                ? min(100, round($this->goal->current_savings / $targetCost * 100))
                 : 0;
             Notification::create([
                 'user_id' => $this->goal->user_id,
                 'trip_id' => $this->goal->trip_id,
                 'type'    => 'savings_goal_deposit',
-                'message' => 'You added ₱' . number_format($this->depositAmount, 2)
-                    . " to \"{$this->goal->goal_name}\" — now ₱" . number_format($this->goal->current_savings, 2)
-                    . ' of ₱' . number_format($this->goal->target_amount, 2) . " saved ({$pct}%).",
+                'message' => "You added {$depositHomeFormatted} to \"{$this->goal->goal_name}\" — now {$savedHomeFormatted} of {$targetHomeFormatted} saved ({$pct}%).",
                 'is_read' => false,
             ]);
         }
@@ -96,52 +210,17 @@ class SavingsGoalManager extends Component
         $this->dispatch('goalUpdated');
     }
 
-    // Same "Upcoming/Ongoing + destination_currency + live rate" rule as
-    // Saved Trips, so a goal card matches whatever currency its own trip's
-    // card is already showing — not the account's stale, unrelated
-    // currency_code() Settings default (mislabeled peso figures as "USD").
-    private function destinationDisplayCurrency(): ?array
-    {
-        $trip = $this->goal->trip;
-        if (!$trip || !$trip->destination_currency) return null;
-
-        $status = $trip->getRawOriginal('status');
-        if (!$status) {
-            $today  = Carbon::today();
-            $status = $trip->start_date->gt($today) ? 'upcoming' : ($trip->end_date->lt($today) ? 'past' : 'active');
-        }
-        if (!in_array($status, ['active', 'upcoming'], true)) return null;
-
-        $rate = (new CurrencyConverterService())->rateToPhp($trip->destination_currency);
-        if ($rate === null) return null;
-
-        return ['code' => $trip->destination_currency, 'rate' => $rate];
-    }
-
-    // For passive DISPLAY of already-computed peso figures (saved amount,
-    // target goal) — not for input fields. Deposits are still typed and
-    // tracked in pesos (see submitDeposit()), so the "Add Savings" input
-    // itself stays peso-labeled rather than implying a conversion that
-    // doesn't actually happen on the way in.
-    public function displayAmount(float $pesoAmount): string
-    {
-        $currency = $this->destinationDisplayCurrency();
-        if ($currency === null) {
-            return '₱' . number_format($pesoAmount, 2);
-        }
-        $symbol = PlaceCatalog::CURRENCY_SYMBOLS[$currency['code']] ?? $currency['code'];
-        return $symbol . number_format($pesoAmount / $currency['rate'], 2);
-    }
-
     public function getPctProperty(): float
     {
-        if (!$this->goal->target_amount) return 0;
-        return min(100, round($this->goal->current_savings / $this->goal->target_amount * 100, 1));
+        $targetCost = $this->goal->trip?->total_cost ?? $this->goal->target_amount;
+        if (!$targetCost) return 0;
+        return min(100, round($this->goal->current_savings / $targetCost * 100, 1));
     }
 
     public function getDailyNeededProperty(): float
     {
-        $remaining = $this->goal->target_amount - $this->goal->current_savings;
+        $targetCost = $this->goal->trip?->total_cost ?? $this->goal->target_amount;
+        $remaining = $targetCost - $this->goal->current_savings;
         if ($remaining <= 0) return 0;
         $days = max(1, (int) Carbon::today()->diffInDays($this->goal->deadline, false));
         return $days > 0 ? round($remaining / $days, 2) : $remaining;
@@ -154,7 +233,8 @@ class SavingsGoalManager extends Component
 
     public function getIsCompletedProperty(): bool
     {
-        return $this->goal->current_savings >= $this->goal->target_amount;
+        $targetCost = $this->goal->trip?->total_cost ?? $this->goal->target_amount;
+        return $this->goal->current_savings >= $targetCost;
     }
 
     public function render()
@@ -162,3 +242,4 @@ class SavingsGoalManager extends Component
         return view('livewire.traveler.savings-goal-manager');
     }
 }
+

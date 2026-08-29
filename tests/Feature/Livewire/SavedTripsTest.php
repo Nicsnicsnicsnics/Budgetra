@@ -37,9 +37,10 @@ class SavedTripsTest extends TestCase
         Expense::create(['trip_id' => $trip->id, 'user_id' => $user->id, 'amount' => 2000, 'category' => 'Transportation', 'expense_date' => '2026-08-02']);
 
         // 5000 / 10000 = 50%
-        Livewire::actingAs($user)->test(SavedTrips::class)
-            ->assertSee('50%')
-            ->assertSee('5,000');
+        $component = Livewire::actingAs($user)->test(SavedTrips::class);
+        $trips = collect($component->viewData('trips'))->keyBy('id');
+        $this->assertSame(5000.0, (float) $trips[$trip->id]->actual_spent);
+        $this->assertSame(50, (int) $trips[$trip->id]->spend_pct);
     }
 
     public function test_spend_percentage_caps_at_100_when_over_budget(): void
