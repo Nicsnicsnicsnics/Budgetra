@@ -105,6 +105,67 @@ class LlmTest extends TestCase
             ->assertSet('aiDateFrom', $future->format('M j'));
     }
 
+    // The planner used to seed aiCurrency to a hardcoded 'PHP' regardless of
+    // who was asking, so a Japanese traveler's bare budget number was always
+    // read as pesos. home_currency() (app/helpers.php) already does exactly
+    // this lookup — country -> currency, PHP if unknown — and is already
+    // trusted by TripPlannerWizard and SavingsGoalManager; mount() just never
+    // called it.
+    public function test_mount_seeds_currency_from_the_users_own_country(): void
+    {
+        $user = User::factory()->create(['country' => 'Japan']);
+
+        Livewire::actingAs($user)
+            ->test(Llm::class)
+            ->assertSet('aiCurrency', 'JPY');
+    }
+
+    // Guards the existing behavior, not just the new one: a Philippines-based
+    // traveler must still default to pesos exactly as before.
+    public function test_mount_still_defaults_a_philippines_user_to_pesos(): void
+    {
+        $user = User::factory()->create(['country' => 'Philippines']);
+
+        Livewire::actingAs($user)
+            ->test(Llm::class)
+            ->assertSet('aiCurrency', 'PHP');
+    }
+
+    // The country only sets the DEFAULT before anything's been said about
+    // currency — it must never override what the traveler actually types.
+    // detectAndConvertCurrency() is untouched by this change; this confirms
+    // an explicit "$500" still wins over a Japanese home country.
+    public function test_an_explicit_currency_overrides_the_country_default(): void
+    {
+        $user = User::factory()->create(['country' => 'Japan']);
+        Http::fake([
+            'api.twelvedata.com/*' => Http::response(['symbol' => 'USD/PHP', 'rate' => 61.71], 200),
+        ]);
+
+        $component = Livewire::actingAs($user)->test(Llm::class);
+        $component->assertSet('aiCurrency', 'JPY'); // the default, before typing anything
+
+        $component->set('aiPrompt', '$500')->call('automateTrip');
+
+        $component->assertSet('aiCurrency', 'USD');
+    }
+
+    // /reset must restore the traveler's OWN currency, not a hardcoded one —
+    // otherwise a Japanese traveler who resets mid-conversation would fall
+    // back to pesos instead of their own default.
+    public function test_reset_conversation_restores_the_users_own_currency(): void
+    {
+        $user = User::factory()->create(['country' => 'Japan']);
+
+        $component = Livewire::actingAs($user)->test(Llm::class);
+        $component->assertSet('aiCurrency', 'JPY');
+
+        $component->set('aiCurrency', 'USD') // simulate a currency picked up mid-conversation
+            ->set('aiPrompt', '/reset')->call('automateTrip');
+
+        $component->assertSet('aiCurrency', 'JPY');
+    }
+
     // The AI free-generates transport.from_code independently of the "from"
     // field in the same JSON response — it can (and does) name the origin
     // correctly while still defaulting the flight route to Manila, since
@@ -129,6 +190,44 @@ class LlmTest extends TestCase
         $component->assertSet('aiFrom', 'Cebu City');
         $this->assertSame('CEB', $component->get('aiPackage')['transport']['from_code']);
         $this->assertSame('DVO', $component->get('aiPackage')['transport']['to_code']);
+    }
+
+    // The exact bug reported live: planning "Cebu City to Japan" built a Japan
+    // *flight* (transport codes are independently corrected — see the test
+    // above) but a Cebu City *hotel, restaurants, and attractions*. Root cause:
+    // conversationSummary() sent the AI nothing but the raw chat transcript —
+    // "I want to travel in japan. Cebu city. ..." — with no label saying which
+    // city was the origin and which was the destination, so the AI guessed and
+    // guessed wrong. aiFrom/aiTo were already correctly resolved by this point;
+    // the summary just never told the AI about them.
+    public function test_conversation_summary_sent_to_the_planner_labels_origin_and_destination(): void
+    {
+        $user = User::factory()->create();
+        $from = 'Cebu City';
+        $to   = 'Japan';
+        $this->fakeGeminiPackage(['from' => $from, 'to' => $to]);
+
+        Livewire::actingAs($user)
+            ->test(Llm::class)
+            ->set('messages', [
+                ['role' => 'user', 'text' => 'I want to travel in japan'],
+                ['role' => 'user', 'text' => 'Cebu city'],
+                ['role' => 'user', 'text' => 'Only Solo'],
+                ['role' => 'user', 'text' => '75000'],
+                ['role' => 'user', 'text' => 'give me 1week'],
+            ])
+            ->set('aiFrom', $from)
+            ->set('aiTo', $to)
+            ->call('processAiTrip');
+
+        Http::assertSent(function ($request) use ($from, $to) {
+            if (!str_contains($request->url(), 'generativelanguage.googleapis.com')) {
+                return false;
+            }
+            $body = json_encode($request->data());
+            return str_contains($body, "Destination city: {$to}")
+                && str_contains($body, "Origin city: {$from}");
+        });
     }
 
     // proceedToWizardItinerary() is the only point a conversation ever
@@ -161,6 +260,67 @@ class LlmTest extends TestCase
         ]);
         $saved = AiConversationHistory::where('user_id', $user->id)->first();
         $this->assertCount(2, $saved->messages);
+    }
+
+    // The provider prompts ask for date_from as "Mon D" (no year) but date_to
+    // as "Mon D, YYYY" (see GeminiService::planTrip()), so the start year has
+    // to be borrowed from date_to. That's correct within one calendar year and
+    // wrong across New Year: "Dec 28" + "Jan 3, 2027" put the start in
+    // December *2027*, eleven months AFTER the trip's own end date.
+    public function test_proceeding_to_the_wizard_keeps_a_new_year_trip_in_the_right_years(): void
+    {
+        $user     = User::factory()->create();
+        $thisYear = (int) date('Y');
+        $nextYear = $thisYear + 1;
+
+        Livewire::actingAs($user)
+            ->test(Llm::class)
+            ->set('messages', [['role' => 'user', 'text' => 'Manila to Baguio for New Year']])
+            ->set('aiFrom', 'Manila')
+            ->set('aiTo', 'Baguio')
+            ->set('aiDateFrom', 'Dec 28')
+            ->set('aiDateTo', "Jan 3, {$nextYear}")
+            ->set('aiDays', 7)
+            ->set('aiPackage', ['transport' => ['from_code' => 'MNL', 'to_code' => 'BAG', 'cost' => 3000]])
+            ->call('proceedToWizardItinerary');
+
+        $handoff = session('wizard_ai_handoff');
+
+        $this->assertSame("{$thisYear}-12-28", $handoff['start']);
+        $this->assertSame("{$nextYear}-01-03", $handoff['end']);
+        $this->assertTrue(
+            strtotime($handoff['start']) < strtotime($handoff['end']),
+            'The trip start must fall before its end.'
+        );
+    }
+
+    // dehydrate() persists ai_currency for the draft, but the history archive
+    // left it out entirely — so the column fell back to its default('PHP') and
+    // the History panel rendered every past trip in pesos, including ones the
+    // traveler planned and saw in another currency.
+    public function test_proceeding_to_the_wizard_archives_the_currency_it_was_planned_in(): void
+    {
+        $user = User::factory()->create();
+
+        Livewire::actingAs($user)
+            ->test(Llm::class)
+            ->set('messages', [['role' => 'user', 'text' => 'I have $2000 for Tokyo']])
+            ->set('aiFrom', 'Manila')
+            ->set('aiTo', 'Tokyo')
+            ->set('aiBudgetMin', 112000)
+            ->set('aiBudgetMax', 112000)
+            ->set('aiCurrency', 'USD')
+            ->set('aiDateFrom', 'Aug 3')
+            ->set('aiDateTo', 'Aug 10, 2026')
+            ->set('aiDays', 8)
+            ->set('aiPackage', ['transport' => ['from_code' => 'MNL', 'to_code' => 'HND', 'cost' => 30000]])
+            ->call('proceedToWizardItinerary');
+
+        $this->assertDatabaseHas('ai_conversation_histories', [
+            'user_id'     => $user->id,
+            'ai_to'       => 'Tokyo',
+            'ai_currency' => 'USD',
+        ]);
     }
 
     public function test_history_panel_lists_past_conversations_newest_first(): void
@@ -344,6 +504,211 @@ class LlmTest extends TestCase
         $component->assertSet('aiBudgetMax', 50000);
         $component->assertSet('aiTo', 'Boracay'); // untouched
         $component->assertSet('awaitingSlot', 'confirmation');
+    }
+
+    // Reported live: editing the budget during confirmation goes through
+    // applyValueToSlot('budget', ...), which called parseMoneyToken() directly
+    // — a function that only understands digits, commas, and a k-suffix, with
+    // no concept of a currency symbol at all. "change my budget to $500" made
+    // PHP's (int)"$500" cast to 0, silently rejecting the edit outright.
+    public function test_editing_budget_during_confirmation_to_a_foreign_currency_amount_is_accepted(): void
+    {
+        $user = User::factory()->create();
+        Http::fake([
+            'api.twelvedata.com/*' => Http::response(['symbol' => 'USD/PHP', 'rate' => 61.71], 200),
+        ]);
+
+        $component = $this->withAllSlotsFilled(
+            Livewire::actingAs($user)->test(Llm::class)
+        )->set('aiPrompt', 'please continue')->call('automateTrip');
+
+        $component->set('aiPrompt', 'change my budget to $500')->call('automateTrip');
+
+        // $500 * 61.71 = ₱30,855
+        $component->assertSet('aiCurrency', 'USD');
+        $component->assertSet('aiBudgetMin', 30855);
+        $component->assertSet('aiBudgetMax', 30855);
+        $component->assertSet('awaitingSlot', 'confirmation');
+    }
+
+    // Same bug, the other direction: once a foreign currency IS attached (from
+    // an earlier $500 entry), a later plain-number edit must not leave that
+    // currency stranded on an unrelated peso figure — the old code left
+    // aiCurrency untouched forever once set, so "change it to 40000" kept
+    // reporting the new peso amount as if it were still dollars.
+    public function test_editing_budget_to_a_plain_number_after_a_foreign_currency_resets_to_pesos(): void
+    {
+        $user = User::factory()->create();
+        Http::fake([
+            'api.twelvedata.com/*' => Http::response(['symbol' => 'USD/PHP', 'rate' => 61.71], 200),
+        ]);
+
+        $component = $this->withAllSlotsFilled(
+            Livewire::actingAs($user)->test(Llm::class)
+        )->set('aiPrompt', 'please continue')->call('automateTrip');
+
+        $component->set('aiPrompt', 'change my budget to $500')->call('automateTrip');
+        $component->assertSet('aiCurrency', 'USD');
+
+        $component->set('aiPrompt', 'change my budget to 40000')->call('automateTrip');
+
+        $component->assertSet('aiCurrency', 'PHP');
+        $component->assertSet('aiBudgetMax', 40000);
+    }
+
+    // parseMoneyToken() is called DIRECTLY with the raw edit text here,
+    // bypassing the capturing regexes ($big, the bare-k regex) that the
+    // earlier "75kphp" fix repaired — so a glued php suffix typed straight
+    // into an edit needs parseMoneyToken() itself to understand it.
+    public function test_editing_budget_with_a_glued_php_suffix_still_expands_to_thousands(): void
+    {
+        $user = User::factory()->create();
+
+        $component = $this->withAllSlotsFilled(
+            Livewire::actingAs($user)->test(Llm::class)
+        )->set('aiPrompt', 'please continue')->call('automateTrip');
+
+        $component->set('aiPrompt', 'change my budget to 50kphp')->call('automateTrip');
+
+        $component->assertSet('aiBudgetMax', 50000);
+    }
+
+    // Proves the fix closes the gap all the way to History, not just the
+    // in-memory component state.
+    public function test_a_budget_edited_to_a_foreign_currency_is_archived_with_that_currency(): void
+    {
+        $user = User::factory()->create();
+        Http::fake([
+            'api.twelvedata.com/*' => Http::response(['symbol' => 'USD/PHP', 'rate' => 61.71], 200),
+        ]);
+
+        $component = $this->withAllSlotsFilled(
+            Livewire::actingAs($user)->test(Llm::class)
+        )->set('aiPrompt', 'please continue')->call('automateTrip');
+
+        $component->set('aiPrompt', 'change my budget to $500')->call('automateTrip');
+        $component->set('aiPackage', ['transport' => ['from_code' => 'MNL', 'to_code' => 'MPH', 'cost' => 3000]])
+            ->call('proceedToWizardItinerary');
+
+        $this->assertDatabaseHas('ai_conversation_histories', [
+            'user_id'       => $user->id,
+            'ai_currency'   => 'USD',
+            'ai_budget_max' => 30855,
+        ]);
+    }
+
+    // "100k" is one of the most common ways to state a budget here, and every
+    // caller of parseMoneyToken() deliberately captures the k before handing
+    // the token over. parseMoneyToken() itself couldn't expand it: its regex
+    // opened with a backslash instead of a delimiter, so preg_match() returned
+    // false ("Internal error") and the token fell through to (int) "100k" — a
+    // ₱100 budget instead of ₱100,000.
+    public function test_a_budget_written_with_a_k_suffix_expands_to_thousands(): void
+    {
+        $user = User::factory()->create();
+
+        $component = $this->withAllSlotsFilled(
+            Livewire::actingAs($user)->test(Llm::class)
+        )->set('aiPrompt', 'please continue')->call('automateTrip');
+
+        $component->set('aiPrompt', 'change my budget to 100k')->call('automateTrip');
+
+        $component->assertSet('aiBudgetMin', 100000);
+        $component->assertSet('aiBudgetMax', 100000);
+    }
+
+    public function test_a_k_suffix_budget_is_case_insensitive(): void
+    {
+        $user = User::factory()->create();
+
+        $component = $this->withAllSlotsFilled(
+            Livewire::actingAs($user)->test(Llm::class)
+        )->set('aiPrompt', 'please continue')->call('automateTrip');
+
+        $component->set('aiPrompt', 'change my budget to 50K')->call('automateTrip');
+
+        $component->assertSet('aiBudgetMax', 50000);
+    }
+
+    // The k branch sits alongside the plain and comma-grouped paths in
+    // parseMoneyToken(); this pins those down too so a future change to one
+    // can't quietly break the others. Both values stay above
+    // MINIMUM_TOTAL_BUDGET (₱10,000), or blockUnaffordableSlotEdit() rejects
+    // the edit and zeroes the budget by design.
+    public function test_budgets_without_a_k_suffix_are_parsed_literally(): void
+    {
+        $user = User::factory()->create();
+
+        $component = $this->withAllSlotsFilled(
+            Livewire::actingAs($user)->test(Llm::class)
+        )->set('aiPrompt', 'please continue')->call('automateTrip');
+
+        $component->set('aiPrompt', 'change my budget to 100,000')->call('automateTrip');
+        $component->assertSet('aiBudgetMax', 100000);
+
+        $component->set('aiPrompt', 'change my budget to 45000')->call('automateTrip');
+        $component->assertSet('aiBudgetMax', 45000);
+    }
+
+    // The exact bug reported live: typed "75kphp" as a fresh answer to "what's
+    // your budget?" and it was accepted as ₱75. The regex used to spot a
+    // k-suffix number required a word boundary right after the k
+    // (\d+\s*[kK]\b), and "kphp" has no boundary there — k and p are both word
+    // characters — so the match failed entirely and the code fell through to
+    // its last-resort bare-digits branch, which only captured the leading "75".
+    public function test_a_budget_with_a_glued_currency_suffix_still_expands_to_thousands(): void
+    {
+        $user = User::factory()->create();
+        $this->fakeExtraction();
+
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('awaitingSlot', 'budget')
+            ->set('aiPrompt', '75kphp')
+            ->call('automateTrip');
+
+        $component->assertSet('aiBudgetMin', 75000);
+        $component->assertSet('aiBudgetMax', 75000);
+    }
+
+    // Same bug, the shortfall it actually produced: 75kphp -> ₱75 tripped
+    // MINIMUM_TOTAL_BUDGET (₱10,000) and the traveler was told their budget
+    // was too low, immediately after answering the question correctly. Every
+    // OTHER slot has to be pre-filled here — otherwise missingSlotKey() still
+    // returns something else missing, automateTrip() just asks for that next
+    // slot, and the too-low gate (which only runs once nothing is missing)
+    // never actually executes, making the assertion pass for the wrong reason.
+    public function test_a_budget_with_a_glued_currency_suffix_does_not_trigger_the_too_low_gate(): void
+    {
+        $user = User::factory()->create();
+
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('aiFrom', 'Manila')
+            ->set('aiTo', 'Boracay')
+            ->set('aiTravelers', 2)
+            ->set('aiDateFrom', 'Aug 3')
+            ->set('aiDateTo', 'Aug 10, 2026')
+            ->set('awaitingSlot', 'budget')
+            ->set('aiPrompt', '75kphp')
+            ->call('automateTrip');
+
+        $component->assertSet('aiBudgetMax', 75000);
+        $lastMessage = collect($component->get('messages'))->last()['text'];
+        $this->assertStringNotContainsString('too low', $lastMessage);
+    }
+
+    // Guards the fix: the already-working spaced form ("75k php") must keep
+    // working once the glued form ("75kphp") is also accepted.
+    public function test_a_budget_with_a_spaced_currency_suffix_still_works(): void
+    {
+        $user = User::factory()->create();
+        $this->fakeExtraction();
+
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('awaitingSlot', 'budget')
+            ->set('aiPrompt', '75k php')
+            ->call('automateTrip');
+
+        $component->assertSet('aiBudgetMax', 75000);
     }
 
     public function test_editing_travelers_during_confirmation_updates_just_that_slot(): void
@@ -1121,19 +1486,120 @@ class LlmTest extends TestCase
         $component->assertSet('aiCurrency', 'USD');
     }
 
-    // The exact bug reported live: destination-currency parsing happens
-    // LATER in parseAiPrompt() than the currency/budget block, so a
-    // one-shot message naming both the destination and a foreign-currency
-    // budget ("go to Japan... budget is $500") used to build the "Got it —
-    // $500 is about ₱X" acknowledgment before aiTo was resolved, silently
-    // dropping the destination-currency mention even though the
-    // destination was in the very same message. It's now appended where
-    // the notice is actually shown in automateTrip(), after parseAiPrompt()
-    // has fully run and aiTo is known. The peso figure itself is no longer
-    // shown once a destination conversion is available — pesos is only
-    // ever surfaced as the fallback when there's nothing to convert into
-    // yet (see the "still missing" test below).
-    public function test_currency_conversion_message_mentions_destination_currency_when_named_in_the_same_message(): void
+    // Reported live: "$1500K" was read as $1,500 — the "K" thousands
+    // shorthand was silently dropped. detectAndConvertCurrency()'s number
+    // pattern had no concept of a k-suffix at all (unlike the peso-only
+    // parsing paths, which already understood "75k"), so this affected every
+    // one of the 26 supported foreign currencies, not just USD.
+    public function test_a_dollar_budget_with_a_k_suffix_expands_to_thousands(): void
+    {
+        $user = User::factory()->create();
+        Http::fake([
+            'api.twelvedata.com/*' => Http::response(['symbol' => 'USD/PHP', 'rate' => 61.71], 200),
+            'api.mistral.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => json_encode([
+                    'off_topic' => false, 'is_greeting' => false, 'is_inappropriate' => false,
+                    'origin' => null, 'destination' => null, 'travelers' => null,
+                    'budget_min' => null, 'budget_max' => null,
+                    'date_from' => null, 'date_to' => null,
+                ])]]],
+            ], 200),
+        ]);
+
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('aiPrompt', '$1500K')->call('automateTrip');
+
+        // $1500K = $1,500,000 -> at 61.71 that is 92,565,000, but MAX_BUDGET
+        // clamps any single conversion to 10,000,000 pesos.
+        $component->assertSet('aiBudgetMin', 10000000);
+        $component->assertSet('aiBudgetMax', 10000000);
+        $component->assertSet('aiCurrency', 'USD');
+    }
+
+    // Same bug, a currency other than USD — confirms the fix isn't
+    // dollar-specific. €500K should become €500,000, not €500.
+    public function test_a_euro_budget_with_a_k_suffix_expands_to_thousands(): void
+    {
+        $user = User::factory()->create();
+        Http::fake([
+            'api.twelvedata.com/*' => Http::response(['symbol' => 'EUR/PHP', 'rate' => 65], 200),
+            'api.mistral.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => json_encode([
+                    'off_topic' => false, 'is_greeting' => false, 'is_inappropriate' => false,
+                    'origin' => null, 'destination' => null, 'travelers' => null,
+                    'budget_min' => null, 'budget_max' => null,
+                    'date_from' => null, 'date_to' => null,
+                ])]]],
+            ], 200),
+        ]);
+
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('aiPrompt', '€2K')->call('automateTrip');
+
+        // €2,000 * 65 = ₱130,000
+        $component->assertSet('aiBudgetMin', 130000);
+        $component->assertSet('aiBudgetMax', 130000);
+        $component->assertSet('aiCurrency', 'EUR');
+    }
+
+    // The reverse word order — number then currency code — must also pick
+    // up the k-suffix, not just "symbol immediately before the number".
+    public function test_a_k_suffix_budget_works_with_the_currency_code_after_the_number(): void
+    {
+        $user = User::factory()->create();
+        Http::fake([
+            'api.twelvedata.com/*' => Http::response(['symbol' => 'USD/PHP', 'rate' => 61.71], 200),
+            'api.mistral.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => json_encode([
+                    'off_topic' => false, 'is_greeting' => false, 'is_inappropriate' => false,
+                    'origin' => null, 'destination' => null, 'travelers' => null,
+                    'budget_min' => null, 'budget_max' => null,
+                    'date_from' => null, 'date_to' => null,
+                ])]]],
+            ], 200),
+        ]);
+
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('aiPrompt', '2K USD')->call('automateTrip');
+
+        // $2,000 * 61.71 = ₱123,420
+        $component->assertSet('aiBudgetMin', 123420);
+        $component->assertSet('aiBudgetMax', 123420);
+    }
+
+    // Guards against a false positive: an unrelated word that happens to
+    // start with "k" right after the amount ("$500 kg of luggage") must NOT
+    // be mistaken for the thousands shorthand and inflate the budget 1000x.
+    public function test_a_plain_dollar_amount_followed_by_an_unrelated_k_word_is_not_multiplied(): void
+    {
+        $user = User::factory()->create();
+        Http::fake([
+            'api.twelvedata.com/*' => Http::response(['symbol' => 'USD/PHP', 'rate' => 61.71], 200),
+            'api.mistral.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => json_encode([
+                    'off_topic' => false, 'is_greeting' => false, 'is_inappropriate' => false,
+                    'origin' => null, 'destination' => null, 'travelers' => null,
+                    'budget_min' => null, 'budget_max' => null,
+                    'date_from' => null, 'date_to' => null,
+                ])]]],
+            ], 200),
+        ]);
+
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('aiPrompt', '$500 kg of luggage allowance')->call('automateTrip');
+
+        // $500 * 61.71 = ₱30,855 — NOT ₱30,855,000
+        $component->assertSet('aiBudgetMin', 30855);
+        $component->assertSet('aiBudgetMax', 30855);
+    }
+
+    // A one-shot message naming both the destination and a foreign-currency
+    // budget ("go to Japan... budget is $500") converts the budget to pesos
+    // internally and remembers it as USD — but no longer announces either
+    // figure in chat at all (neither the peso conversion nor a yen preview).
+    // TripPlannerWizard asks about converting to the destination currency at
+    // save time, which is the one place that question belongs.
+    public function test_currency_conversion_updates_state_and_does_not_announce_any_currency_in_chat(): void
     {
         $user = User::factory()->create();
         Http::fake([
@@ -1146,15 +1612,20 @@ class LlmTest extends TestCase
 
         $component->assertSet('aiTo', 'Japan');
         $component->assertSet('aiBudgetMin', 30855);
+        $component->assertSet('aiCurrency', 'USD');
+
         $allText = collect($component->get('messages'))->pluck('text')->implode(' ');
-        $this->assertStringNotContainsString('₱30,855', $allText);
-        $this->assertStringContainsString('is about', $allText);
-        $this->assertStringContainsString('in Japan', $allText);
+        $this->assertStringNotContainsString('is about', $allText);
+        $this->assertStringNotContainsString('¥', $allText);
     }
 
-    // No destination named yet — there's nothing to convert into, so the
-    // peso figure is still the only thing worth showing.
-    public function test_currency_conversion_message_falls_back_to_pesos_when_no_destination_is_known_yet(): void
+    // A foreign-currency budget still converts and is still remembered
+    // correctly (aiCurrency stays 'USD', the peso figure is right) — TARA
+    // just no longer announces the conversion as its own chat message. The
+    // traveler keeps seeing their own currency everywhere it actually
+    // matters: the "Got your budget of $500!" acknowledgment, the
+    // confirmation summary, and later History.
+    public function test_currency_conversion_updates_state_without_announcing_it_in_chat(): void
     {
         $user = User::factory()->create();
         Http::fake([
@@ -1174,8 +1645,11 @@ class LlmTest extends TestCase
 
         $component->assertSet('aiTo', '');
         $component->assertSet('aiBudgetMin', 30855);
+        $component->assertSet('aiCurrency', 'USD');
+
         $allText = collect($component->get('messages'))->pluck('text')->implode(' ');
-        $this->assertStringContainsString('is about ₱30,855', $allText);
+        $this->assertStringNotContainsString('is about', $allText);
+        $this->assertStringContainsString('$500', $allText);
     }
 
     // There is no hardcoded exchange-rate fallback — if TwelveData is
@@ -2436,7 +2910,12 @@ class LlmTest extends TestCase
         $this->assertStringNotContainsString('$361', $lastMessage);
     }
 
-    public function test_confirmation_summary_shows_destination_currency_for_an_international_destination(): void
+    // Even with a live rate available for an international destination, the
+    // summary stays in the currency the traveler has been talking in all along.
+    // TripPlannerWizard's own modal ("Convert your budget from PHP to JPY?") is
+    // where that decision belongs — previewing it here as well meant yen got
+    // mentioned twice before the traveler was ever actually asked about it.
+    public function test_confirmation_summary_stays_in_pesos_for_an_international_destination(): void
     {
         $user = User::factory()->create();
         Http::fake([
@@ -2451,7 +2930,42 @@ class LlmTest extends TestCase
             ->set('aiPrompt', 'please continue')->call('automateTrip');
 
         $lastMessage = collect($component->get('messages'))->last()['text'];
-        $this->assertStringContainsString('Destination budget: ¥118,421', $lastMessage);
+        $this->assertStringContainsString('₱45,000', $lastMessage);
+        $this->assertStringNotContainsString('Destination budget', $lastMessage);
+        $this->assertStringNotContainsString('¥', $lastMessage);
+    }
+
+    // Dropping the yen preview from the CHAT must not drop it from the DATA.
+    // autosaveDraft() still stamps destination_currency on the draft trip, and
+    // SavedTrips, SavingsGoalManager and the Expenses form all read that column
+    // to decide which currency to show. This is the guard on that distinction.
+    public function test_autosaved_draft_trip_still_records_the_destination_currency(): void
+    {
+        $user = User::factory()->create();
+        Http::fake([
+            'api.twelvedata.com/*' => Http::response(['symbol' => 'JPY/PHP', 'rate' => 0.38], 200),
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(Llm::class)
+            ->set('messages', [['role' => 'user', 'text' => 'Manila to Japan']])
+            ->set('aiStep', 'results')
+            ->set('aiFrom', 'Manila')
+            ->set('aiTo', 'Japan')
+            ->set('aiBudgetMin', 45000)
+            ->set('aiBudgetMax', 45000)
+            ->set('aiDateFrom', 'Aug 3')
+            ->set('aiDateTo', 'Aug 10, 2026')
+            ->set('aiDays', 8)
+            ->set('aiTravelers', 2)
+            ->call('$refresh');
+
+        $this->assertDatabaseHas('trips', [
+            'user_id'              => $user->id,
+            'destination'          => 'Japan',
+            'status'               => 'draft',
+            'destination_currency' => 'JPY',
+        ]);
     }
 
     public function test_confirmation_summary_omits_destination_currency_for_a_domestic_destination(): void

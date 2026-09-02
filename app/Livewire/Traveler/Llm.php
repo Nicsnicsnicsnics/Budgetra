@@ -12,6 +12,7 @@ use App\Services\OpenRouterService;
 use App\Services\SerpApiService;
 use App\Services\SerperService;
 use App\Support\PlaceCatalog;
+use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
 use Livewire\Component;
@@ -150,12 +151,16 @@ class Llm extends Component
     public function mount(): void
     {
 
-        // Pesos until the traveller says otherwise — either by naming a currency
-        // in the prompt (detectAndConvertCurrency) or by having a foreign home
-        // city on their profile. This used to seed from the account's Settings
-        // currency, which defaulted to USD and showed every new traveller their
-        // peso budget converted into dollars.
-        $this->aiCurrency = 'PHP';
+        // Defaults to the traveller's own home currency (via their registered
+        // country — home_currency() falls back to PHP if unknown) until they
+        // say otherwise, either by naming a currency in the prompt
+        // (detectAndConvertCurrency) or by having a foreign home city on their
+        // profile. This used to seed from the account's Settings currency,
+        // which defaulted to USD and showed every new traveller their peso
+        // budget converted into dollars — home_currency() is a different,
+        // already-trusted mechanism (TripPlannerWizard, SavingsGoalManager)
+        // whose own fallback is PHP, not USD.
+        $this->aiCurrency = home_currency();
 
         $draft = AiConversationDraft::where('user_id', auth()->id())->first();
         if (!$draft) {
@@ -616,28 +621,26 @@ class Llm extends Component
             $notice = $this->currencyNotice;
             $this->currencyNotice = null;
 
-            $conversion = $this->destinationBudgetConversion();
-            if ($conversion !== null) {
-                $notice .= " In {$this->aiTo} that's about " . $this->formatDestinationAmount($conversion['code'], $conversion['amount']) . '.';
-            }
-
+            // The destination's own currency deliberately isn't previewed here.
+            // TripPlannerWizard already asks about converting to it at save time
+            // ("Convert your budget from PHP to JPY?"), which is both the moment
+            // it matters and a real choice rather than a line of text. Saying it
+            // during the chat as well meant the traveller heard about yen twice
+            // before being asked about it a third time.
             $this->messages[] = ['role' => 'assistant', 'text' => $notice];
             $this->dispatch('message-added');
         }
 
         if ($this->currencyNoticeLabel !== null) {
-            $label      = $this->currencyNoticeLabel;
-            $pesoAmount = $this->currencyNoticePesoAmount;
+            // No "$X is about ₱Y" callout — the peso figure is still what
+            // gets planned against internally (see detectAndConvertCurrency()),
+            // this just stops announcing the conversion in chat. The traveler
+            // keeps seeing their own currency everywhere else: the confirmation
+            // summary, the results screen, and History all read it back out via
+            // displayAmount(), which converts the stored pesos back into
+            // whatever aiCurrency is — untouched by this.
             $this->currencyNoticeLabel      = null;
             $this->currencyNoticePesoAmount = null;
-
-            $conversion = $this->destinationBudgetConversion();
-            $notice = $conversion !== null
-                ? "Got it — {$label} is about " . $this->formatDestinationAmount($conversion['code'], $conversion['amount']) . " in {$this->aiTo}, I'll plan around that."
-                : "Got it — {$label} is about ₱" . number_format((float) $pesoAmount) . ", I'll plan around that.";
-
-            $this->messages[] = ['role' => 'assistant', 'text' => $notice];
-            $this->dispatch('message-added');
         }
 
         $this->applyDirectAnswerFallback($userText);
@@ -853,7 +856,7 @@ class Llm extends Component
         $this->aiDateTo        = '';
         $this->aiDays          = 0;
         $this->aiTravelers     = 0;
-        $this->aiCurrency      = 'PHP';   // see mount()
+        $this->aiCurrency      = home_currency();   // see mount()
         $this->aiPackage       = [];
         $this->aiGenCount      = 0;
         $this->aiBudgetIsDaily = false;
@@ -940,7 +943,14 @@ class Llm extends Component
         foreach (self::PROVIDER_ORDER as $class) {
             try {
                 $result = $invoke(new $class());
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
+                // Swallowing this silently made an expired key or a spent quota
+                // look like the AI merely giving worse answers, with nothing in
+                // the logs to say which of the four providers actually failed.
+                Log::warning('AI provider failed', [
+                    'provider' => class_basename($class),
+                    'message'  => $e->getMessage(),
+                ]);
                 continue;
             }
             if ($result) return $result;
@@ -1130,7 +1140,7 @@ class Llm extends Component
                 $b = $this->parseMoneyToken($m[2]);
                 $this->aiBudgetMin = min($a, $b);
                 $this->aiBudgetMax = max($a, $b);
-            } elseif (preg_match('/(\d+(?:,\d{3})*\s*[kK])\b/', $userText, $m)) {
+            } elseif (preg_match('/(\d+(?:,\d{3})*\s*[kK])(?:\b|(?=(?:' . $this->currencySuffixWords() . ')\b))/i', $userText, $m)) {
                 $v = $this->parseMoneyToken($m[1]);
                 if ($v > 0) $this->aiBudgetMin = $this->aiBudgetMax = $v;
             } elseif (preg_match('/(\d[\d,]*)/', $userText, $m)) {
@@ -1278,17 +1288,15 @@ PROMPT;
 
     private function confirmationSummary(): string
     {
-        $conversion = $this->destinationBudgetConversion();
-        $destinationLine = $conversion !== null
-            ? "\n- Destination budget: " . $this->formatDestinationAmount($conversion['code'], $conversion['amount'])
-            : '';
-
+        // No "Destination budget" line — the wizard's conversion modal owns that
+        // decision, so the summary stays in the currency the traveller has been
+        // talking in the whole way through.
         return "Here's what I've got so far:\n"
             . "- From: {$this->aiFrom}\n"
             . "- Destination: {$this->aiTo}\n"
             . "- Travel dates: {$this->aiDateFrom} to {$this->aiDateTo}\n"
             . "- Travelers: {$this->aiTravelers}\n"
-            . "- Budget: {$this->formattedBudget()}{$destinationLine}\n\n"
+            . "- Budget: {$this->formattedBudget()}\n\n"
             . "Would you like me to proceed with this plan?";
     }
 
@@ -1375,9 +1383,28 @@ PROMPT;
         }
 
         if ($slot === 'budget') {
+            // This is the ONLY budget-writing path that used to skip currency
+            // detection entirely — it went straight to parseMoneyToken(), which
+            // only understands digits/commas/k, so "change my budget to $500"
+            // made PHP's (int)"$500" cast to 0 and silently reject the edit.
+            // Reusing detectAndConvertCurrency() here is the same function the
+            // very first budget entry already relies on.
+            $conversion = $this->detectAndConvertCurrency($value);
+            if ($conversion === false) return false; // live rate unavailable — ask again
+            if ($conversion !== null) {
+                $this->aiBudgetMin = $this->aiBudgetMax = min(self::MAX_BUDGET, $conversion['pesoAmount']);
+                return true;
+            }
+
             $v = $this->parseMoneyToken($value);
             if ($v <= 0) return false;
             $this->aiBudgetMin = $this->aiBudgetMax = $v;
+            // A bare number carries no currency marker, so it means the
+            // traveller's own currency — the same convention mount() and
+            // resetConversation() use. Reset here so a plain-number edit
+            // can't leave an earlier foreign currency stranded on a new,
+            // unrelated figure.
+            $this->aiCurrency = home_currency();
             return true;
         }
 
@@ -1567,13 +1594,40 @@ PROMPT;
 
     private function conversationSummary(): string
     {
-        $summary = collect($this->messages)
+        // The resolved slots lead, because the raw transcript alone is just an
+        // unlabeled list of place names — "I want to travel in japan. Cebu
+        // city." gives the planner no way to tell origin from destination, and
+        // it guessed wrong: it built a Cebu City hotel and Cebu attractions for
+        // a trip whose actual destination was Japan. aiFrom/aiTo have already
+        // been through this component's own place verification (matchKnownPlace
+        // / aiPlaceFallback), so they are stated as settled fact, not something
+        // for the planner to re-derive or double-guess from the transcript.
+        $facts = [];
+        if ($this->aiFrom !== '')   $facts[] = "Origin city: {$this->aiFrom}";
+        if ($this->aiTo !== '')     $facts[] = "Destination city: {$this->aiTo}";
+        if ($this->aiTravelers > 0) $facts[] = "Travelers: {$this->aiTravelers}";
+        if ($this->aiBudgetMax > 0 || $this->aiBudgetMin > 0) {
+            $facts[] = 'Budget in PHP: ' . ($this->aiBudgetMax ?: $this->aiBudgetMin);
+        }
+        if ($this->aiDateFrom !== '' && $this->aiDateTo !== '') {
+            $facts[] = "Travel dates: {$this->aiDateFrom} to {$this->aiDateTo}";
+        }
+        if ($this->aiDays > 0) $facts[] = "Days: {$this->aiDays}";
+
+        $transcript = collect($this->messages)
             ->where('role', 'user')
             ->pluck('text')
             ->implode('. ');
 
+        $summary = empty($facts)
+            ? $transcript
+            : "CONFIRMED TRIP DETAILS (already verified as real, existing places — "
+                . "use these exactly, do not infer a different origin or destination "
+                . "from the conversation below):\n" . implode("\n", $facts)
+                . "\n\nOriginal conversation for extra context: {$transcript}";
+
         if (!empty($this->profileInterests)) {
-            $summary .= '. Traveler interests: ' . implode(', ', $this->profileInterests) . '.';
+            $summary .= "\nTraveler interests: " . implode(', ', $this->profileInterests) . '.';
         }
 
         return $summary;
@@ -2163,6 +2217,21 @@ PROMPT;
         'KES' => ['name' => 'Kenyan shillings',   'symbol' => 'KSh '],
     ];
 
+    // "75kphp" was being read as ₱75 — the k-suffix regexes required a word
+    // boundary right after the k (\d+\s*[kK]\b), and there is no boundary
+    // between "k" and "php" since both are word characters, so the match
+    // failed outright and the caller fell back to the bare leading digits.
+    // This builds the currency-word alternation those regexes check for as a
+    // lookahead, so "75k" is still captured even when a currency word is
+    // glued directly onto it with no space. Built from SUPPORTED_CURRENCIES
+    // rather than duplicated as a literal so the two stay in sync.
+    private function currencySuffixWords(): string
+    {
+        $words = array_map(fn ($code) => strtolower($code), array_keys(self::SUPPORTED_CURRENCIES));
+        $words[] = 'pesos?';
+        return implode('|', $words);
+    }
+
     private const CURRENCY_ALIASES = [
         '$' => 'USD', '＄' => 'USD', 'usd' => 'USD',
         '€' => 'EUR', 'eur' => 'EUR',
@@ -2191,7 +2260,16 @@ PROMPT;
         $symbolOrCode = '(?:\$|＄|€|£|￡|¥|￥|₩|￦|₱|₹|₫|₦|USD|EUR|GBP|JPY|SGD|AUD|KRW|HKD|THB|MYR|AED|PHP|pesos?'
             . '|IDR|VND|CNY|INR|NZD|CAD|BRL|MXN|ARS|SAR|EGP|NGN|ZAR|KES)';
 
-        $number = '(?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)';
+        // Optional "k"/"K" thousands shorthand — "$2K", "€500K", "2K USD" —
+        // glued directly onto the digits. Reported live: "$1500K" was being
+        // read as $1,500, the K silently dropped, because this pattern never
+        // had any concept of it; unlike the peso-only parsing elsewhere in
+        // this file, this path (the one used for EVERY foreign currency) had
+        // no k-suffix handling at all. The negative lookahead keeps an
+        // unrelated word starting with k — "$500 kg of luggage" — from being
+        // mistaken for the multiplier: it only counts when k is immediately
+        // followed by a non-letter (end of string, space, punctuation).
+        $number = '(?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)(?:[kK](?![a-zA-Z]))?';
 
         if (preg_match('/(' . $symbolOrCode . ')\s*(' . $number . ')/iu', $text, $m)) {
             [$marker, $amountRaw] = [$m[1], $m[2]];
@@ -2207,7 +2285,10 @@ PROMPT;
         $currency = self::SUPPORTED_CURRENCIES[$code] ?? null;
         if ($currency === null) return null;
 
-        $foreignAmount = (float) str_replace(',', '', $amountRaw);
+        $hasThousandsSuffix = (bool) preg_match('/[kK]$/', $amountRaw);
+        $numericPart = $hasThousandsSuffix ? substr($amountRaw, 0, -1) : $amountRaw;
+        $foreignAmount = (float) str_replace(',', '', $numericPart);
+        if ($hasThousandsSuffix) $foreignAmount *= 1000;
         if ($foreignAmount <= 0) return null;
 
         $this->aiCurrency = $code;
@@ -2311,6 +2392,15 @@ PROMPT;
 
         $startTs = $this->aiDateFrom ? strtotime($this->aiDateFrom . ', ' . $year) : false;
         $endTs   = $this->aiDateTo   ? strtotime($this->aiDateTo) : false;
+
+        // date_from carries no year of its own (the provider prompts ask for
+        // "Mon D", date_to for "Mon D, YYYY"), so it borrows date_to's. On a
+        // trip that crosses New Year — Dec 28 → Jan 3, 2027 — that lands the
+        // start eleven months AFTER the end. Roll it back into the prior year.
+        if ($startTs !== false && $endTs !== false && $startTs > $endTs) {
+            $startTs = strtotime($this->aiDateFrom . ', ' . ((int) $year - 1));
+        }
+
         $start   = $startTs !== false ? date('Y-m-d', $startTs) : now()->toDateString();
         $end     = $endTs   !== false ? date('Y-m-d', $endTs)   : now()->addDays(max(1, $this->aiDays))->toDateString();
         $nights  = max(1, (int) \Carbon\Carbon::parse($start)->diffInDays(\Carbon\Carbon::parse($end)));
@@ -2378,6 +2468,11 @@ PROMPT;
             'ai_date_to'    => $this->aiDateTo,
             'ai_days'       => $this->aiDays,
             'ai_travelers'  => $this->aiTravelers,
+            // Without this the column falls back to its default('PHP') and the
+            // History panel renders every past trip in pesos — including ones
+            // planned in another currency. dehydrate() already saves it for the
+            // draft; only the archive was missing it.
+            'ai_currency'   => $this->aiCurrency ?: 'PHP',
             'ai_package'    => $this->aiPackage,
         ]);
 
@@ -2419,6 +2514,11 @@ PROMPT;
     private function parseMoneyToken(string $token): int
     {
         $token = trim($token);
+        // Callers upstream (the $big regex, the bare-k regex) already strip a
+        // glued php/pesos suffix before capturing a token, but applyValueToSlot()
+        // passes raw edit text straight through, bypassing them — so "50kphp"
+        // typed directly into an edit needs to be handled here too.
+        $token = preg_replace('/\s*(?:php|pesos?)$/i', '', $token);
         if (preg_match('/^(\d+(?:,\d{3})*)\s*[kK]$/', $token, $m)) {
             return min(self::MAX_BUDGET, (int) str_replace(',', '', $m[1]) * 1000);
         }
@@ -2572,7 +2672,7 @@ PROMPT;
             if ($v > 0) $this->aiTravelers = $v;
         }
 
-        $big = '(?:\d{1,3}(?:,\d{3})+|\d{4,}|\d+\s*[kK]\b)';
+        $big = '(?:\d{1,3}(?:,\d{3})+|\d{4,}|\d+\s*[kK](?:\b|(?=(?:' . $this->currencySuffixWords() . ')\b)))';
 
         if (($unsupported = $this->detectUnsupportedCurrency($withoutDate)) !== null) {
             $this->unsupportedCurrencyNotice = "I couldn't recognize the selected currency. Please choose one of the supported currencies from the list.";
