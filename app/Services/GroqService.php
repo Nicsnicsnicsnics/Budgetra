@@ -11,7 +11,13 @@ class GroqService
 
     private string $key;
     private string $endpoint = 'https://api.groq.com/openai/v1/chat/completions';
-    private string $model    = 'llama-3.3-70b-versatile';
+    // llama-3.3-70b-versatile was retired and 404'd on every call, which made
+    // this provider a guaranteed miss in the fallback chain rather than the
+    // backstop it is meant to be. Not one of Groq's gpt-oss models: those are
+    // reasoning models that spend part of max_tokens on a hidden reasoning
+    // field before answering, so a long itinerary can come back truncated —
+    // and truncated JSON fails to parse, which reads as another dead provider.
+    private string $model    = 'qwen/qwen3.8-27b';
 
     public function __construct()
     {

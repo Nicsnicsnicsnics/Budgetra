@@ -11,6 +11,7 @@ class AiConversationDraft extends Model
         'ai_date_from', 'ai_date_to', 'ai_days', 'ai_travelers', 'ai_currency',
         'awaiting_slot', 'miss_count', 'ai_step', 'ai_package', 'ai_gen_count',
         'pending_profile_offer',
+        'building_profile', 'profile_draft',
     ];
 
     protected function casts(): array
@@ -19,6 +20,8 @@ class AiConversationDraft extends Model
             'messages'               => 'array',
             'ai_package'             => 'array',
             'pending_profile_offer'  => 'boolean',
+            'profile_draft'          => 'array',
+            'building_profile'       => 'boolean',
         ];
     }
 

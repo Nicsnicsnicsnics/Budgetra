@@ -629,7 +629,10 @@
 
     @if($returnTo)
     <button class="pb-btn pb-btn-primary" wire:click="saveAndReturn" wire:loading.attr="disabled">
-        <span wire:loading.remove wire:target="saveAndReturn"><i class="fa-solid fa-check" style="font-size:11px;"></i> Save Changes</span>
+        <span wire:loading.remove wire:target="saveAndReturn">
+            <i class="fa-solid fa-check" style="font-size:11px;"></i>
+            {{ $fromTara ? 'Save & Back to TARA' : 'Save Changes' }}
+        </span>
         <span wire:loading wire:target="saveAndReturn"><i class="fa-solid fa-spinner fa-spin"></i></span>
     </button>
     @elseif($step < 7)
