@@ -324,6 +324,18 @@
                         <div class="llm-msg llm-msg-{{ $msg['role'] }}">{{ $msg['text'] }}</div>
                     </div>
                 @endforeach
+
+                {{-- Alternative to typing the numbers: opens the form's card
+                     picker, which saves and comes straight back here. --}}
+                @if ($buildingProfile && ($profileDraft['awaiting_slot'] ?? '') === 'interests')
+                    <div class="llm-msg-row llm-msg-row-assistant" style="margin-left:36px;">
+                        <button type="button" wire:click="pickInterestsInForm" wire:loading.attr="disabled" wire:target="pickInterestsInForm"
+                                style="background:var(--primary);color:#fff;border:none;border-radius:16px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:8px;">
+                            <span wire:loading.remove wire:target="pickInterestsInForm"><i class="fa-solid fa-images" style="font-size:12px;"></i> Pick from the list</span>
+                            <span wire:loading wire:target="pickInterestsInForm"><i class="fa-solid fa-spinner fa-spin" style="font-size:12px;"></i></span>
+                        </button>
+                    </div>
+                @endif
             </div>
 
             <div class="llm-composer" style="margin-top:auto;">

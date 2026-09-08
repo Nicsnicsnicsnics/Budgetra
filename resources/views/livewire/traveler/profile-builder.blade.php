@@ -798,7 +798,10 @@
             @else
             x-on:click="busy = true" wire:click="saveAndReturn"
             @endif>
-        <span x-show="!busy"><i class="fa-solid fa-check" style="font-size:11px;"></i> Save Changes</span>
+        <span x-show="!busy">
+            <i class="fa-solid fa-check" style="font-size:11px;"></i>
+            {{ $fromTara ? 'Save & Back to TARA' : 'Save Changes' }}
+        </span>
         <span x-show="busy" x-cloak><i class="fa-solid fa-spinner fa-spin"></i></span>
     </button>
     @elseif($step === 4)

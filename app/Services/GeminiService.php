@@ -54,7 +54,7 @@ Traveler's input: "{$userPrompt}"
 
 Instructions:
 1. Extract: origin city (default "Manila" if not mentioned), destination city, number of travelers (default 1 if not mentioned), budget (min and max in PHP pesos — if single value use it for both), travel start date, travel end date, and number of days.
-2. Generate a realistic trip package using REAL hotels, airlines, restaurants, and attractions that exist at the destination.
+2. Generate a realistic trip package using REAL hotels, airlines, restaurants, and attractions that exist at the DESTINATION city named above — never the origin city, even if the origin is more prominent or familiar to you.
 3. transport.cost = the price of ONE person's ticket (not the group total). food.cost = ONE person's total dining cost for the trip (not the group total). Do not multiply either by the number of travelers — that happens afterward. accommodation.cost and attractions.cost should stay as their real total figures (whole room cost, real entrance fees), not per-person.
 4. ALL costs combined must NOT exceed the budget_max.
 5. Budget split suggestion: transport 18%, accommodation 50%, food 28%, attractions 4%.

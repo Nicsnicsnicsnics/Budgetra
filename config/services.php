@@ -42,7 +42,12 @@ return [
 
     'gemini' => [
         'key'      => env('GEMINI_API_KEY', ''),
-        'endpoint' => 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+        // Deliberately the "latest" alias rather than a pinned version:
+        // gemini-2.0-flash was decommissioned and 404'd on every call, and
+        // gemini-2.5-flash is already 404ing too. The alias tracks whichever
+        // flash model is current, so a retirement stops silently killing this
+        // link in the fallback chain.
+        'endpoint' => 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent',
     ],
 
     'groq' => [

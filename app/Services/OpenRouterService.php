@@ -71,7 +71,7 @@ Traveler's input: "{$userPrompt}"
 
 Instructions:
 1. Extract: origin city (default "Manila" if not mentioned), destination city, budget (min and max in PHP pesos — if single value use it for both), travel start date, travel end date, and number of days.
-2. Generate a realistic trip package using REAL hotels, airlines, restaurants, and attractions that exist at the destination.
+2. Generate a realistic trip package using REAL hotels, airlines, restaurants, and attractions that exist at the DESTINATION city named above — never the origin city, even if the origin is more prominent or familiar to you.
 3. ALL costs combined must NOT exceed the budget_max.
 4. Budget split suggestion: transport 18%, accommodation 50%, food 28%, attractions 4%.
 5. Use correct Philippine IATA airport codes (MNL=Manila, CEB=Cebu City, DVO=Davao, BCD=Bacolod, ILO=Iloilo, ZAM=Zamboanga, KLO=Kalibo/Boracay, MPH=Malay/Boracay, TAG=Tagbilaran/Bohol, PPS=Puerto Princesa, CGY=Cagayan de Oro, GES=General Santos, etc.).

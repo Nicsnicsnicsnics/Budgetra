@@ -3,16 +3,16 @@
 namespace App\Livewire\Traveler;
 
 use Livewire\Component;
-use App\Models\Notification;
-use App\Models\User;
-use App\Models\UserProfile;
-use App\Services\CurrencyConverterService;
-use App\Support\PlaceCatalog;
+use App\Models\AiConversationDraft;
+use App\Services\UserProfileSaver;
+use App\Support\ProfileCatalog;
 
 class ProfileBuilder extends Component
 {
     public int    $step       = 1;
     public string $returnTo   = '';
+    // Arrived here from TARA's interests question rather than the normal form.
+    public bool   $fromTara   = false;
     public string $homeCity   = '';
     // Set when a save is refused because the budget could not be converted.
     public string $saveError  = '';
@@ -28,68 +28,18 @@ class ProfileBuilder extends Component
     public string $preferredTransportation = '';
     public string $preferredAccommodation  = '';
 
-    public const INTERESTS = [
-        'Beach'           => ['Surfing', 'Snorkeling', 'Island Hopping', 'Swimming', 'Diving', 'Beach Camping', 'Kayaking', 'Sunset Watching'],
-        'Nature'          => ['Mountains', 'Waterfalls', 'Wildlife', 'Forests', 'Camping', 'Bird Watching', 'National Parks', 'Caves'],
-        'Food Trip'       => ['Street Food', 'Fine Dining', 'Local Delicacies', 'Cafes', 'Food Tours', 'Cooking Classes', 'Farmers Markets', 'Food Festivals'],
-        'Adventure'       => ['Hiking', 'Diving', 'Ziplining', 'Canyoneering', 'Rock Climbing', 'Whitewater Rafting', 'Paragliding', 'ATV Rides'],
-        'Historical Sites'=> ['Churches', 'Ruins', 'Forts', 'Heritage Towns', 'Monuments', 'Ancestral Houses', 'War Memorials', 'Archaeological Sites'],
-        'Shopping'        => ['Malls', 'Night Markets', 'Pasalubong', 'Thrift Shops', 'Local Crafts', 'Souvenir Shops', 'Boutiques', 'Flea Markets'],
-        'Museums'         => ['Art', 'History', 'Science', 'Culture', 'Natural History', 'Interactive Exhibits', 'Local Heritage', 'Photography'],
-        'Nightlife'       => ['Bars', 'Clubs', 'Live Music', 'Night Markets', 'Rooftop Bars', 'Karaoke', 'Night Tours', 'Cultural Shows'],
-        'Relaxation'      => ['Spa', 'Beach Resort', 'Hot Springs', 'Wellness', 'Yoga Retreats', 'Massage', 'Meditation', 'Quiet Cafes'],
-    ];
-
-    public const ICONS = [
-        'Beach'           => 'fa-umbrella-beach',
-        'Nature'          => 'fa-leaf',
-        'Food Trip'       => 'fa-utensils',
-        'Adventure'       => 'fa-person-hiking',
-        'Historical Sites'=> 'fa-landmark',
-        'Shopping'        => 'fa-bag-shopping',
-        'Museums'         => 'fa-building-columns',
-        'Nightlife'       => 'fa-moon',
-        'Relaxation'      => 'fa-spa',
-    ];
-
-    public const IMAGES = [
-        'Beach'           => 'beach.jpg',
-        'Nature'          => 'nature.jpg',
-        'Food Trip'       => 'foodtrip.jpg',
-        'Adventure'       => 'adventure.jpg',
-        'Historical Sites'=> 'historical.jpg',
-        'Shopping'        => 'shopping.jpg',
-        'Museums'         => 'museums.jpg',
-        'Nightlife'       => 'nightlife.jpg',
-        'Relaxation'      => 'relaxation.jpg',
-    ];
-
-    public const TRAVEL_STYLES = [
-        'Solo'  => ['icon' => 'fa-user', 'desc' => 'Travel at your own pace with a budget built for one.', 'image' => 'solo.jpg'],
-        'Group' => ['icon' => 'fa-user-group',      'desc' => 'Divide expenses and explore together, no one overpays.', 'image' => 'group.jpg'],
-    ];
-
-    public const TRANSPORTATION_OPTIONS = [
-        'Flight' => 'fa-plane',
-    ];
-
-    public const TRANSPORTATION_IMAGES = [
-        'Flight' => 'flights.jpg',
-    ];
-
-    public const ACCOMMODATION_OPTIONS = [
-        'Hotel'     => 'fa-hotel',
-        'Apartment' => 'fa-building',
-        'Inn'       => 'fa-house-chimney',
-        'Resort'    => 'fa-umbrella-beach',
-    ];
-
-    public const ACCOMMODATION_IMAGES = [
-        'Hotel'     => 'hotel.jpg',
-        'Apartment' => 'apartment.png',
-        'Inn'       => 'inn.jpg',
-        'Resort'    => 'resort.jpg',
-    ];
+    // The lists themselves now live in ProfileCatalog, so the AI planner can
+    // resolve free-text answers against the same canonical labels this form
+    // offers as buttons. Kept as aliases because profile/edit.blade.php reads
+    // ProfileBuilder::ICONS / ::TRAVEL_STYLES / ::INTERESTS directly.
+    public const INTERESTS              = ProfileCatalog::INTERESTS;
+    public const ICONS                  = ProfileCatalog::ICONS;
+    public const IMAGES                 = ProfileCatalog::IMAGES;
+    public const TRAVEL_STYLES          = ProfileCatalog::TRAVEL_STYLES;
+    public const TRANSPORTATION_OPTIONS = ProfileCatalog::TRANSPORTATION_OPTIONS;
+    public const TRANSPORTATION_IMAGES  = ProfileCatalog::TRANSPORTATION_IMAGES;
+    public const ACCOMMODATION_OPTIONS  = ProfileCatalog::ACCOMMODATION_OPTIONS;
+    public const ACCOMMODATION_IMAGES   = ProfileCatalog::ACCOMMODATION_IMAGES;
 
     public function mount(): void
     {
@@ -124,6 +74,44 @@ class ProfileBuilder extends Component
         if (in_array($requestedReturn, ['trips.plan.ai', 'profile.edit'], true)) {
             $this->returnTo = $requestedReturn;
         }
+
+        $this->applyTaraDraftIfHandedOver();
+    }
+
+    /**
+     * Sent here mid-conversation by Llm::pickInterestsInForm().
+     *
+     * Overlays the answers TARA has collected but not yet saved. Without this
+     * the save below would write an empty home city and a zero budget over
+     * them, because a traveller building a profile through chat has no
+     * UserProfile row for mount() to load from yet.
+     *
+     * The session key is pulled once into a component property so it can't
+     * linger and mis-flag a later, unrelated visit to this form.
+     */
+    private function applyTaraDraftIfHandedOver(): void
+    {
+        if (! session()->pull('tara_interests_return')) return;
+
+        $this->fromTara = true;
+        $this->step     = 4;
+        // Set here rather than relying on ?return= surviving the round trip:
+        // the handoff already knows where it came from.
+        $this->returnTo = 'trips.plan.ai';
+
+        $draft = AiConversationDraft::where('user_id', auth()->id())->first();
+        if (! $draft) return;
+
+        $d = (array) ($draft->profile_draft ?? []);
+        if (! $d) return;
+
+        $this->homeCity           = (string) ($d['home_city'] ?? $this->homeCity);
+        $this->dailyBudget        = (float)  ($d['daily_budget'] ?? $this->dailyBudget);
+        $this->dailyBudgetDisplay = $this->dailyBudget ? number_format($this->dailyBudget) : '';
+        $this->travelStyle        = (string) ($d['travel_style'] ?? $this->travelStyle);
+        $this->groupMemberEmails  = (array)  ($d['group_member_emails'] ?? $this->groupMemberEmails);
+        $this->selectedInterests  = (array)  ($d['interests'] ?? $this->selectedInterests);
+        $this->selectedSubInterests = (array) ($d['sub_interests'] ?? $this->selectedSubInterests);
     }
 
     // Every step is checked for its own required field(s) before advancing.
@@ -317,102 +305,32 @@ class ProfileBuilder extends Component
      * Returns false when the save was refused — currently only when a foreign
      * daily budget can't be turned into pesos by any means. Callers must not
      * navigate away in that case.
+     *
+     * The write itself, including the refuse-rather-than-guess currency rule,
+     * lives in UserProfileSaver so the AI planner saves through the identical
+     * path rather than a second copy of it.
      */
     private function persistProfile(): bool
     {
-        // Captured before the write so only genuinely new companions get a
-        // notification — re-saving the profile must not re-notify everyone.
-        // Read straight from the table rather than auth()->user()->userProfile:
-        // that relation is cached on the User instance, so a second save in
-        // the same request would still see the pre-save list and notify twice.
-        $existing = UserProfile::where('user_id', auth()->id())->first();
-        $previousEmails = (array) ($existing?->group_member_emails ?? []);
+        $result = (new UserProfileSaver())->save(auth()->user(), [
+            'home_city'                => $this->homeCity,
+            'daily_budget'             => $this->dailyBudget,
+            'travel_style'             => $this->travelStyle,
+            'group_member_emails'      => $this->groupMemberEmails,
+            'interests'                => $this->selectedInterests,
+            'sub_interests'            => $this->selectedSubInterests,
+            'preferred_transportation' => $this->preferredTransportation,
+            'preferred_accommodation'  => $this->preferredAccommodation,
+        ]);
 
-        $pesoBudget    = $this->dailyBudget;
-        $localCurrency = null;
-        $localBudget   = null;
-
-        $currencyCode = $this->currencyForHomeCity($this->homeCity);
-        if ($currencyCode !== null && $currencyCode !== 'PHP' && $this->dailyBudget > 0) {
-            $converter = new CurrencyConverterService();
-
-            // Recorded whether or not a rate is found, so the amount the
-            // traveller actually typed and the currency it was typed in are
-            // never lost and the pesos can always be re-derived later.
-            $localCurrency = $currencyCode;
-            $localBudget   = $this->dailyBudget;
-
-            $liveRate = $converter->rateToPhp($currencyCode);
-            $sameAsSaved = $existing
-                && $existing->daily_budget_currency === $currencyCode
-                && (float) $existing->daily_budget_local === (float) $this->dailyBudget;
-
-            if ($liveRate !== null) {
-                $pesoBudget = round($this->dailyBudget * $liveRate, 2);
-            } elseif ($sameAsSaved) {
-                // Same foreign amount as the last save and no live rate right
-                // now: keep the figure that WAS converted from a live rate.
-                // Not a guessed rate — a previously live-derived one — and it
-                // is what stops a provider outage from rewriting a correct
-                // budget, which it used to do with the raw foreign number.
-                $pesoBudget = (float) $existing->daily_budget;
-            } else {
-                // No rate, and nothing previously converted to fall back on.
-                // Refuse rather than store a foreign amount as pesos. Matches
-                // confirmEmergencyFund() in the trip planner, which already
-                // blocks on this same condition.
-                $this->saveError = "I couldn't convert your {$currencyCode} budget into pesos just now — please try again in a moment.";
-                return false;
-            }
-        }
-
-        UserProfile::updateOrCreate(
-            ['user_id' => auth()->id()],
-            [
-                'home_city'      => $this->homeCity,
-                'daily_budget'   => $pesoBudget,
-                'daily_budget_currency' => $localCurrency,
-                'daily_budget_local'    => $localBudget,
-                'travel_style'         => $this->travelStyle,
-                'group_member_emails'  => $this->travelStyle === 'Group' ? $this->groupMemberEmails : [],
-                'interests'      => $this->selectedInterests,
-                'sub_interests'  => $this->selectedSubInterests,
-                'preferred_transportation' => $this->preferredTransportation,
-                'preferred_accommodation'  => $this->preferredAccommodation,
-            ]
-        );
-
-        if ($this->travelStyle === 'Group') {
-            $this->notifyNewCompanions($previousEmails);
+        if (! $result['ok']) {
+            $this->saveError = $result['error'];
+            return false;
         }
 
         $this->saveError = '';
 
         return true;
-    }
-
-    /**
-     * Tells anyone newly listed as a travel companion. Only registered
-     * accounts can be notified; an unknown email is simply skipped, matching
-     * how the group-member picker already behaves.
-     */
-    private function notifyNewCompanions(array $previousEmails): void
-    {
-        $added = array_diff($this->groupMemberEmails, $previousEmails);
-        if (!$added) return;
-
-        $inviter = auth()->user()->full_name ?: 'A fellow traveler';
-
-        User::whereIn('email', $added)
-            ->where('id', '!=', auth()->id())
-            ->get()
-            ->each(fn (User $u) => Notification::create([
-                'user_id' => $u->id,
-                'trip_id' => null,
-                'type'    => 'group_member_added',
-                'message' => "{$inviter} added you as a travel companion. You'll be included on their group trips.",
-                'is_read' => false,
-            ]));
     }
 
     public function confirmProfile(): void
@@ -444,6 +362,10 @@ class ProfileBuilder extends Component
             return;   // stay put, saveError is shown
         }
 
+        // Tells the waiting profile conversation to pick the interests up and
+        // move on to its review, instead of re-asking what was just answered.
+        if ($this->fromTara) session(['tara_interests_picked' => true]);
+
         $this->redirect(route($this->returnTo ?: 'dashboard'), navigate: true);
     }
 
@@ -462,27 +384,9 @@ class ProfileBuilder extends Component
         return array_slice(array_values($this->citiesForCurrentUser()), 0, 3);
     }
 
-    private function currencyForHomeCity(string $homeCity): ?string
-    {
-        if (trim($homeCity) === '') return null;
-
-        foreach (config('country_cities') as $country => $cities) {
-            if (in_array($homeCity, $cities, true)) {
-                return PlaceCatalog::COUNTRY_CURRENCIES[$country] ?? null;
-            }
-        }
-
-        // Trips derive a currency from a different table, keyed by city rather
-        // than country. A city listed there but not in country_cities used to
-        // yield no currency here at all, so the same place could be foreign to
-        // the planner and peso-denominated to the profile.
-        return PlaceCatalog::DESTINATION_CURRENCIES[strtolower(trim($homeCity))] ?? null;
-    }
-
     private function budgetDisplaySymbol(): string
     {
-        $code = $this->currencyForHomeCity($this->homeCity);
-        return PlaceCatalog::CURRENCY_SYMBOLS[$code ?? 'PHP'] ?? '₱';
+        return UserProfileSaver::budgetSymbolForHomeCity($this->homeCity);
     }
 
     public function render()

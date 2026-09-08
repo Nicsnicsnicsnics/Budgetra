@@ -11,7 +11,13 @@ class GroqService
 
     private string $key;
     private string $endpoint = 'https://api.groq.com/openai/v1/chat/completions';
-    private string $model    = 'llama-3.3-70b-versatile';
+    // llama-3.3-70b-versatile was retired and 404'd on every call, which made
+    // this provider a guaranteed miss in the fallback chain rather than the
+    // backstop it is meant to be. Not one of Groq's gpt-oss models: those are
+    // reasoning models that spend part of max_tokens on a hidden reasoning
+    // field before answering, so a long itinerary can come back truncated —
+    // and truncated JSON fails to parse, which reads as another dead provider.
+    private string $model    = 'qwen/qwen3.8-27b';
 
     public function __construct()
     {
@@ -84,7 +90,7 @@ Traveler's input: "{$userPrompt}"
 
 Instructions:
 1. Extract: origin city (default "Manila" if not mentioned), destination city, budget (min and max in PHP pesos — if single value use it for both), travel start date, travel end date, and number of days.
-2. Generate a realistic trip package using REAL hotels, airlines, restaurants, and attractions that exist at the destination.
+2. Generate a realistic trip package using REAL hotels, airlines, restaurants, and attractions that exist at the DESTINATION city named above — never the origin city, even if the origin is more prominent or familiar to you.
 3. ALL costs combined must NOT exceed the budget_max.
 4. Budget split suggestion: transport 18%, accommodation 50%, food 28%, attractions 4%.
 5. Use correct Philippine IATA airport codes (MNL=Manila, CEB=Cebu City, DVO=Davao, BCD=Bacolod, ILO=Iloilo, ZAM=Zamboanga, KLO=Kalibo/Boracay, MPH=Malay/Boracay, TAG=Tagbilaran/Bohol, PPS=Puerto Princesa, CGY=Cagayan de Oro, GES=General Santos, etc.).
