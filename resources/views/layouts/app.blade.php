@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-no-progress-bar @if (auth()->user()?->userProfile) data-has-profile @endif>
+<html lang="en" data-no-progress-bar @auth data-user-id="{{ auth()->id() }}" @endauth @if (auth()->user()?->userProfile) data-has-profile @endif>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -18,12 +18,19 @@
     @livewireStyles
     @stack('styles')
     <script>
-        // "Skip this step" on the first-run empty states. Kept in the <head> and
+        // "Skip for now" on the first-run empty states. Kept in the <head> and
         // applied to <html> so the right half of the empty state is chosen before
         // the page paints, and read from one key so skipping on any tab carries to
         // every other tab. Paired with .empty-state-swap in style.css.
         (function () {
-            var KEY = 'budgetraProfileSkipped';
+            // Scoped to the signed-in user. localStorage is per-browser, not
+            // per-account, so a single shared key would hand one account's skip
+            // to whoever signs in next on this machine — a brand-new user would
+            // start already-skipped and never see the prompt at all.
+            function key() {
+                return 'budgetraProfileSkipped:' +
+                    (document.documentElement.getAttribute('data-user-id') || 'guest');
+            }
 
             function apply() {
                 var root = document.documentElement;
@@ -31,10 +38,12 @@
                     // data-has-profile is server-rendered, so it is the authority:
                     // once a profile exists the flag has outlived its purpose.
                     if (root.hasAttribute('data-has-profile')) {
-                        localStorage.removeItem(KEY);
+                        localStorage.removeItem(key());
                         root.removeAttribute('data-profile-skipped');
-                    } else if (localStorage.getItem(KEY) === '1') {
+                    } else if (localStorage.getItem(key()) === '1') {
                         root.setAttribute('data-profile-skipped', '');
+                    } else {
+                        root.removeAttribute('data-profile-skipped');
                     }
                 } catch (e) { /* private mode / storage disabled — show the prompt */ }
             }
@@ -49,7 +58,7 @@
             document.addEventListener('livewire:navigated', apply);
 
             window.budgetraSkipProfileSetup = function () {
-                try { localStorage.setItem(KEY, '1'); } catch (e) {}
+                try { localStorage.setItem(key(), '1'); } catch (e) {}
                 document.documentElement.setAttribute('data-profile-skipped', '');
             };
         })();

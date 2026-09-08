@@ -1,6 +1,29 @@
 @extends('layouts.app')
 @section('title', 'Alerts')
+@push('styles')
+<style>
+    /* While the list fits, the card is content-height and there is no free
+       space here to grow into, so this sits at its natural size and shows no
+       scrollbar. Once the card is shrunk to the viewport, flex:1 hands this
+       whatever is left under the header and min-height:0 lets it shrink far
+       enough to actually scroll rather than pushing the card open again. */
+    .notif-scroll {
+        flex: 1; min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+    /* Same slim thumb as .dash-main, so the card looks unchanged until there
+       is actually something to scroll. */
+    .notif-scroll::-webkit-scrollbar { width: 6px; }
+    .notif-scroll::-webkit-scrollbar-track { background: transparent; }
+    .notif-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+    .notif-scroll::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+    .notif-scroll { scrollbar-color: var(--border) transparent; }
+</style>
+@endpush
+
 @section('content')
+
 
 @php
     $unreadCount  = $notifications->getCollection()->where('is_read', false)->count();
@@ -8,7 +31,7 @@
 @endphp
 
 @if (session('success'))
-<div class="alert alert-success mb-16">{{ session('success') }}</div>
+<div class="alert alert-success mb-16" style="flex-shrink:0;">{{ session('success') }}</div>
 @endif
 
 {{-- No trips *and* nothing to read. A traveller with notifications but no
@@ -30,7 +53,7 @@
         {{-- Swaps in the "plan a trip" prompt below — on every tab, and for
              good, until the profile is actually created. See
              budgetraSkipProfileSetup() in layouts/app.blade.php. --}}
-        <button type="button" class="empty-state-skip" onclick="budgetraSkipProfileSetup()">Skip this step</button>
+        <button type="button" class="empty-state-skip" onclick="budgetraSkipProfileSetup()">Skip for now</button>
     </div>
     @endif
     <div class="empty-state-swap" @if ($alNeedsProfile) data-empty-when="skipped" @endif>
@@ -84,7 +107,13 @@
 
 
 {{-- Notifications card --}}
-<div x-data="{ tab: 'all' }" style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:16px;overflow:hidden;box-sizing:border-box;display:flex;flex-direction:column;">
+{{-- Hugs a short list, stretches only once there is too much to fit. That is
+     flex-shrink, not flex-grow: no grow means the card sizes to its content
+     and leaves the space below it alone, while min-height:0 lets .dash-content
+     (a flex column of definite height) shrink it back down when the rows would
+     otherwise run past the bottom of the viewport. The list inside then takes
+     the remaining height and scrolls. --}}
+<div x-data="{ tab: 'all' }" style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:16px;overflow:hidden;box-sizing:border-box;display:flex;flex-direction:column;min-height:0;">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:15px 20px;border-bottom:1px solid var(--border);flex-shrink:0;">
         <div style="display:flex;align-items:center;gap:10px;">
             <span style="font-size:14px;font-weight:700;color:var(--dark);">Notifications</span>
@@ -108,6 +137,12 @@
         </div>
     </div>
 
+    {{-- The list scrolls, the header above it does not. The card was
+         already flex-column with a flex-shrink:0 header, but nothing
+         bounded the rows, so 20 notifications a page ran off the bottom
+         of the viewport. Capped rather than fixed-height, so a short list
+         still sizes to its content and never shows a scrollbar. --}}
+    <div class="notif-scroll">
     @if ($unreadCount === 0)
     <div x-show="tab === 'unread'" style="box-sizing:border-box;text-align:center;padding:56px 20px;">
         <div style="width:48px;height:48px;border-radius:50%;background:var(--bg);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;">
@@ -165,10 +200,11 @@
     </div>
     @endforeach
     @endforeach
+    </div>
 </div>
 
 @if ($notifications->hasPages())
-<div class="mt-24">{{ $notifications->links() }}</div>
+<div class="mt-24" style="flex-shrink:0;">{{ $notifications->links() }}</div>
 @endif
 
 @endif

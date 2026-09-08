@@ -25,8 +25,8 @@ class SavedTrips extends Component
     public string $editStatus    = 'upcoming';
     public string $memberEmail   = '';
     public string $memberError   = '';
-    public array  $pendingMembers = [];  // [['id'=>..,'name'=>..,'email'=>..]]
-    public array  $savedMembers   = [];  // already saved for this trip
+    public array  $pendingMembers = [];
+    public array  $savedMembers   = [];
     public ?int $shareTripId    = null;
     public string $shareCode    = '';
     public string $shareLink    = '';
@@ -230,18 +230,12 @@ class SavedTrips extends Component
         ]);
     }
 
-    // Peso amount, formatted for display — in the trip's destination
-    // currency once it's Upcoming or Ongoing and a live rate was found for
-    // it, otherwise plain pesos. Deliberately NOT currency_code()/currency_symbol()
-    // — that's a separate, unsynced account Settings field that defaults to
-    // USD for every account regardless of the traveler's real currency, so
-    // it was mislabeling genuine peso figures as "USD 141,106" and similar.
+    // Peso amount, formatted for display — see trip_amount() in app/helpers.php.
+    // Shared with the dashboard's trip stubs, which show the same figures and
+    // have to agree with these cards.
     public function displayAmount(Trip $trip, float $pesoAmount): string
     {
-        if ($trip->display_rate) {
-            return $trip->display_currency_code . ' ' . number_format($pesoAmount / $trip->display_rate, 0);
-        }
-        return '₱' . number_format($pesoAmount, 0);
+        return trip_amount($trip, $pesoAmount);
     }
 
     private function fetchTrips()
@@ -273,13 +267,13 @@ class SavedTrips extends Component
             ->latest('created_at')
             ->get()
             ->map(function (Trip $trip) {
-                $today = Carbon::today();
                 $days  = max(1, (int) $trip->start_date->diffInDays($trip->end_date));
                 $trip->setAttribute('days', $days);
-                $trip->setAttribute('status',
-                    $trip->status ??
-                    ($trip->start_date->gt($today) ? 'upcoming' :
-                    ($trip->end_date->lt($today)   ? 'past'     : 'active')));
+                // A stored status wins — the traveller can set one from this
+                // page's edit form — and the dates decide only when there
+                // isn't one. Trip::resolvedStatus is that rule; the dashboard
+                // reads the same accessor so the two lists can't disagree.
+                $trip->setAttribute('status', $trip->resolved_status);
 
                 // Real spending from logged Expenses, vs. the planned budget —
                 // lets the card show actual money tracking, not just the estimate.
@@ -305,23 +299,9 @@ class SavedTrips extends Component
 
                 $trip->setAttribute('shared_with_me', $trip->user_id !== auth()->id());
 
-                // Once a trip is Upcoming or Ongoing, money is more useful
-                // shown in the destination's own currency than in pesos —
-                // but only when a live rate is actually reachable; a failed
-                // lookup silently falls back to the usual peso display
-                // rather than blocking the page or showing an error on a
-                // passive card. Draft and Past trips stay in pesos.
-                $trip->setAttribute('display_currency_code', null);
-                $trip->setAttribute('display_currency_symbol', null);
-                $trip->setAttribute('display_rate', null);
-                if (in_array($trip->status, ['active', 'upcoming'], true) && $trip->destination_currency) {
-                    $liveRate = (new CurrencyConverterService())->rateToPhp($trip->destination_currency);
-                    if ($liveRate !== null) {
-                        $trip->setAttribute('display_currency_code', $trip->destination_currency);
-                        $trip->setAttribute('display_currency_symbol', PlaceCatalog::CURRENCY_SYMBOLS[$trip->destination_currency] ?? $trip->destination_currency);
-                        $trip->setAttribute('display_rate', $liveRate);
-                    }
-                }
+                // Destination currency for Upcoming/Ongoing trips when a live
+                // rate is reachable, pesos otherwise — see helpers.php.
+                trip_apply_display_currency($trip);
 
                 return $trip;
             })

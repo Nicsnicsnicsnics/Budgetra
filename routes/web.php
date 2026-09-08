@@ -112,7 +112,9 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     Route::resource('destinations',  Admin\DestinationController::class)->only(['index', 'update', 'destroy']);
     Route::post('/destinations/{destination}/fetch-image', [Admin\DestinationController::class, 'fetchImage'])->name('destinations.fetch-image');
     Route::resource('travel-costs',  Admin\TravelCostController::class)->except(['show']);
-    Route::resource('attractions',   Admin\AttractionController::class)->except(['show']);
+    // No create/edit pages: both live in one dialog on the index, the way
+    // Destinations and Travel Costs do.
+    Route::resource('attractions',   Admin\AttractionController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::post('/attractions/{attraction}/fetch-image', [Admin\AttractionController::class, 'fetchImage'])->name('attractions.fetch-image');
 
     Route::get('/reviews',                   [Admin\ReviewModerationController::class, 'index'])->name('reviews.index');

@@ -223,6 +223,61 @@ class TripPlannerWizard extends Component
         return array_merge(array_values($this->selectedAttractions), array_values($this->selectedMcAttractions));
     }
 
+    /**
+     * One-line descriptions for the itinerary rows this wizard writes.
+     *
+     * The AI planner's rows arrive with prose already attached, but neither
+     * attraction provider returns a description — SerpApi and Serper both send
+     * name/type/rating/reviews/price and nothing else — so these rows used to
+     * be saved with a null note and rendered as a bare title in the day modal.
+     * Composed from the fields that _are_ there, so every row carries a line
+     * without a further API call.
+     */
+    public static function attractionNote(array $attr, string $city = ''): string
+    {
+        $type = trim((string) ($attr['type'] ?? '')) ?: 'Attraction';
+        $city = trim($city);
+        $line = $city !== '' ? $type . ' in ' . $city : $type;
+
+        $meta   = [];
+        $rating = $attr['rating'] ?? null;
+        if (is_numeric($rating) && (float) $rating > 0) {
+            $reviews = (int) preg_replace('/\D/', '', (string) ($attr['reviews'] ?? ''));
+            $meta[]  = number_format((float) $rating, 1) . '★'
+                . ($reviews > 0 ? ' (' . number_format($reviews) . ' reviews)' : '');
+        }
+        if (! empty($attr['isFree'])) {
+            $meta[] = 'Free entry';
+        }
+
+        return $meta ? $line . ' · ' . implode(' · ', $meta) : $line;
+    }
+
+    /**
+     * Hotel rows already have a usable summary from the search itself —
+     * "3 Nights · Hotel · Taipei" — so prefer it and only compose when it is
+     * missing.
+     */
+    public static function hotelNote(array $hotel, string $city = ''): string
+    {
+        $detail = trim((string) ($hotel['detail'] ?? ''));
+        if ($detail !== '') {
+            return $detail;
+        }
+
+        $nights = (int) ($hotel['nights'] ?? 0);
+        $bits   = [];
+        if ($nights > 0) {
+            $bits[] = $nights . ' ' . \Illuminate\Support\Str::plural('Night', $nights);
+        }
+        $bits[] = trim((string) ($hotel['type'] ?? '')) ?: 'Accommodation';
+        if (trim($city) !== '') {
+            $bits[] = trim($city);
+        }
+
+        return implode(' · ', $bits);
+    }
+
     public function selectedVenuesCost(): int
     {
         $total = 0;
@@ -2599,7 +2654,7 @@ class TripPlannerWizard extends Component
                 'start_datetime' => $day1Date->copy()->setTimeFromTimeString('14:00'),
                 'end_datetime'   => $day1Date->copy()->setTimeFromTimeString('15:00'),
                 'location'       => $destLabel,
-                'notes'          => null,
+                'notes'          => self::hotelNote($hotel, $destLabel),
             ]);
         }
 
@@ -2663,7 +2718,7 @@ class TripPlannerWizard extends Component
                     'start_datetime' => $day->copy()->setTimeFromTimeString($start),
                     'end_datetime'   => $day->copy()->setTimeFromTimeString($start)->addHours(2),
                     'location'       => $destLabel,
-                    'notes'          => null,
+                    'notes'          => self::attractionNote($attr, $destLabel),
                 ]);
             }
 
@@ -2705,7 +2760,7 @@ class TripPlannerWizard extends Component
                     'start_datetime' => $leg2Day->copy()->setTimeFromTimeString('14:00'),
                     'end_datetime'   => $leg2Day->copy()->setTimeFromTimeString('15:00'),
                     'location'       => $leg2Label,
-                    'notes'          => null,
+                    'notes'          => self::hotelNote($hotel2, $leg2Label),
                 ]);
             }
 
@@ -2721,7 +2776,7 @@ class TripPlannerWizard extends Component
                         'start_datetime' => $day->copy()->setTimeFromTimeString($start),
                         'end_datetime'   => $day->copy()->setTimeFromTimeString($start)->addHours(2),
                         'location'       => $leg2Label,
-                        'notes'          => null,
+                        'notes'          => self::attractionNote($attr, $leg2Label),
                     ]);
                 }
 
@@ -2751,7 +2806,7 @@ class TripPlannerWizard extends Component
                     'start_datetime' => $lastDate->copy()->setTimeFromTimeString('10:00'),
                     'end_datetime'   => $lastDate->copy()->setTimeFromTimeString('11:00'),
                     'location'       => $checkoutLabel,
-                    'notes'          => null,
+                    'notes'          => self::hotelNote($checkoutHotel, $checkoutLabel),
                 ]);
             }
             if ($flight && $isRound) {

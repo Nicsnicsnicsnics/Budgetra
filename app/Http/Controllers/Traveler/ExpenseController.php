@@ -128,8 +128,25 @@ class ExpenseController extends Controller
         return view('traveler.expenses.create', compact('trips', 'categories', 'defaultCurrency'));
     }
 
+    /**
+     * The amount field groups thousands as you type ("1,234.50"), so what
+     * arrives can carry separators. The browser strips them on submit, but a
+     * form posted without JS does not — and "1,234.50" fails `numeric`, which
+     * would read to the traveller as "enter a valid amount" for an amount they
+     * did enter correctly.
+     */
+    private function normaliseAmount(Request $request): void
+    {
+        $amount = $request->input('amount');
+        if (is_string($amount)) {
+            $request->merge(['amount' => str_replace(',', '', $amount)]);
+        }
+    }
+
     public function store(Request $request)
     {
+        $this->normaliseAmount($request);
+
         $validated = $request->validate([
             'trip_id'         => 'required|exists:trips,id',
             'amount'          => 'required|numeric|min:0.01',
@@ -195,6 +212,8 @@ class ExpenseController extends Controller
     {
         // Trip membership, not authorship — see edit().
         abort_if(!auth()->user()->canAccessTrip((int) $expense->trip_id), 403);
+
+        $this->normaliseAmount($request);
 
         $validated = $request->validate([
             'trip_id'         => 'required|exists:trips,id',

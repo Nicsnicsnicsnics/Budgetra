@@ -31,6 +31,13 @@
   --cat-attraction: #FFDA03;
   --cat-attraction-ink: #8A6A00;
   --warning: #D97706;
+  /* Progress-meter ramp, used by meter_color() in app/helpers.php. Amber and
+     red borrow --warning/--danger so they keep whatever per-theme contrast
+     fixes those already carry; only the teal is new. #0D9488 is the same teal
+     the dashboard already uses for the Accommodation category. */
+  --meter-good: #0D9488;
+  --meter-warn: var(--warning);
+  --meter-bad:  var(--danger);
   --bg: #F8F5F2;
   --bg-white: #FFFFFF;
   --dark: #1A1A2E;
@@ -101,6 +108,8 @@
   --success: #4ADE80;
   /* Same story for the red: #DC2626 sits at ~3.4:1 on --bg-white here. */
   --danger: #F87171;
+  /* And the meter teal: #0D9488 is ~2.6:1 on this theme's card background. */
+  --meter-good: #2DD4BF;
   /* On this surface the pure sunflower is the readable choice (11.8:1). */
   --cat-attraction-ink: #FFDA03;
   --primary: #7C8CFF;
@@ -1087,7 +1096,15 @@ button:disabled { opacity: 0.65; cursor: not-allowed; }
 }
 
 /* Dashboard content */
-.dash-content { padding: 28px 32px; flex: 1; display: flex; flex-direction: column; min-height: 100%; }
+/* flex-shrink must stay 0. This was `flex: 1`, i.e. shrink factor 1, and the
+   explicit min-height replaces a flex item's default `min-height: auto` — so
+   the automatic minimum size that normally stops an item shrinking below its
+   content was gone. On any page taller than the viewport the box was squashed
+   back to exactly 100%, the content spilled out of it, and this rule's own
+   28px padding-bottom ended up sitting at the box edge ABOVE that overflow,
+   contributing nothing to the scroll. The only gap left at the bottom of a
+   long page was whatever margin its last child happened to carry. */
+.dash-content { padding: 28px 32px; flex: 1 0 auto; display: flex; flex-direction: column; min-height: 100%; }
 .empty-state-center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; min-height: 60vh; }
 
 /* Both halves of a first-run empty state — the "set up your profile" prompt and
@@ -2424,8 +2441,11 @@ button:disabled { opacity: 0.65; cursor: not-allowed; }
    Every surface is drawn from the theme variables. The card used to
    be a hardcoded #fff, which on Nightflight put the theme's near-white
    ink on a white card and made the whole dialog unreadable. */
+/* Neutral scrim, not a tinted one. This was rgba(16,10,5,.55) — a brown that
+   read as a reddish haze over every theme, and fought the cool greys on
+   Nightflight and Daylight outright. Same fix the traveler modals took. */
 .admin-modal-backdrop {
-  position: fixed; inset: 0; background: rgba(16,10,5,.55); backdrop-filter: blur(3px);
+  position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(3px);
   z-index: 2100; display: flex; align-items: center; justify-content: center; padding: 20px;
   animation: adminModalFadeIn .18s ease both;
 }
@@ -2457,7 +2477,14 @@ button:disabled { opacity: 0.65; cursor: not-allowed; }
   display: flex; align-items: center; justify-content: center; font-size: 21px;
   background: var(--primary-light); color: var(--admin-accent);
 }
-.admin-modal-icon-danger { background: rgba(214,69,69,.14); color: var(--danger); }
+/* The tint has to come off the token, not off a fixed red: a flat 14% wash of
+   #D64545 sits on a #1C202B card under Nightflight and all but vanishes, so
+   the delete dialog lost the one colour that says it is destructive. The
+   hardcoded value stays first as the pre-color-mix fallback. */
+.admin-modal-icon-danger { background: rgba(214,69,69,.14); color: var(--admin-danger); }
+@supports (color: color-mix(in srgb, red, blue)) {
+  .admin-modal-icon-danger { background: color-mix(in srgb, var(--admin-danger) 16%, transparent); }
+}
 .admin-modal-title { margin: 0 0 6px; font-size: 18px; font-weight: 800; color: var(--admin-ink); }
 .admin-modal-sub { margin: 0; font-size: 13px; color: var(--admin-muted); line-height: 1.55; }
 /* Nudged a third of the way toward the ink: plain --admin-muted lands at

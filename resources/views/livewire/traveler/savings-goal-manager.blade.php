@@ -100,7 +100,11 @@
 
         {{-- Progress bar --}}
         <div style="height:6px;background:var(--border-light);border-radius:99px;overflow:hidden;margin-bottom:18px;">
-            <div style="height:100%;width:{{ $cardPct }}%;background:{{ $cardDone ? 'var(--success)' : 'var(--primary)' }};border-radius:99px;transition:width 0.3s;"></div>
+            {{-- 'progress', not 'spend': this bar fills as the goal is *reached*,
+                 so the ramp runs the other way and a nearly-saved goal reads
+                 teal. A finished one keeps the existing success green, which
+                 pairs with the "Completed" label above. --}}
+            <div style="height:100%;width:{{ $cardPct }}%;background:{{ $cardDone ? 'var(--success)' : meter_color($cardPct, 'progress') }};border-radius:99px;transition:width 0.3s,background .3s;"></div>
         </div>
 
         {{-- Saved / Target --}}
@@ -236,11 +240,18 @@
                 This will be saved toward your '{{ $dest }}' goal.
             </div>
 
+            {{-- submitDeposit revalidates against a live exchange rate before
+                 it writes, so the round-trip is long enough to look like a
+                 dead button. Spinner only, no wording, matching the expense
+                 form. The button is full-width, so swapping the label for the
+                 icon doesn't change its size. --}}
             <button wire:click="submitDeposit" x-data
+                    wire:target="submitDeposit" wire:loading.attr="disabled"
                     :disabled="!$wire.depositAmount || $wire.depositAmount <= 0"
                     :style="'width:100%;background:var(--primary);color:#fff;border:none;border-radius:12px;padding:14px;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-family:\'Hanken Grotesk\',sans-serif;margin-bottom:12px;transition:background .18s;' + ((!$wire.depositAmount || $wire.depositAmount <= 0) ? 'opacity:.5;cursor:not-allowed;' : 'cursor:pointer;')"
                     onmouseenter="if(!this.disabled)this.style.background='var(--primary-dark)'" onmouseleave="if(!this.disabled)this.style.background='var(--primary)'">
-                Add Savings
+                <span wire:loading.remove wire:target="submitDeposit">Add Savings</span>
+                <i class="fa-solid fa-spinner fa-spin" wire:loading wire:target="submitDeposit"></i>
             </button>
 
             <button wire:click="closeDeposit"

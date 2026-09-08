@@ -27,12 +27,6 @@ class AttractionController extends Controller
         return view('admin.attractions.index', compact('attractions', 'active', 'categories'));
     }
 
-    public function create()
-    {
-        $active = 'attractions';
-        return view('admin.attractions.create', compact('active'));
-    }
-
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -67,12 +61,6 @@ class AttractionController extends Controller
         return redirect()->route('admin.attractions.index')->with('success', 'Attraction added.');
     }
 
-    public function edit(Attraction $attraction)
-    {
-        $active = 'attractions';
-        return view('admin.attractions.edit', compact('attraction', 'active'));
-    }
-
     public function update(Request $request, Attraction $attraction)
     {
         $validated = $request->validate([
@@ -93,7 +81,14 @@ class AttractionController extends Controller
             'category'       => $validated['category'] ?? null,
             'region'         => $validated['region'],
             'rating'         => $validated['rating'] ?? $attraction->rating,
-            'estimated_cost' => $validated['estimated_cost'] ?? null,
+            // Keep the stored cost when the field isn't submitted, the way
+            // rating above already does. Writing null here meant every edit
+            // made from the dialog — which had no estimated_cost input —
+            // silently wiped the column. Only an explicitly emptied field
+            // should clear it, and that arrives as '' rather than absent.
+            'estimated_cost' => $request->has('estimated_cost')
+                ? ($validated['estimated_cost'] ?? null)
+                : $attraction->estimated_cost,
         ];
 
         if ($request->hasFile('image')) {

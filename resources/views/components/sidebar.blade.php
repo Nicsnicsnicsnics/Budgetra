@@ -15,7 +15,7 @@
     ];
 
     $bottomLinks = [
-        ['href' => auth()->user()?->userProfile ? url('/profile') : url('/profile/setup'), 'icon' => 'fa-regular fa-user-circle', 'label' => 'Profile', 'key' => 'profile', 'segment' => 'profile'],
+        ['href' => url('/profile'), 'icon' => 'fa-regular fa-user-circle', 'label' => 'Profile', 'key' => 'profile', 'segment' => 'profile'],
         ['href' => url('/settings'), 'icon' => 'fa-solid fa-gear', 'label' => 'Settings', 'key' => 'settings', 'segment' => 'settings'],
     ];
 
@@ -37,6 +37,12 @@
     }
 @endphp
 
+{{-- Every href here is computed once and then frozen: this block is
+     @persist'ed, so wire:navigate never re-renders it. Profile used to point
+     at /profile/setup for a traveler with no profile yet, and stayed pointing
+     there for the rest of the session even after they finished the builder.
+     /profile already shows a "Set Up Preferences" prompt when there is no
+     profile, so the link needs no condition to go stale in the first place. --}}
 @persist('sidebar')
 <aside class="sidebar" id="appSidebar">
 

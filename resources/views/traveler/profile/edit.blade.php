@@ -26,7 +26,7 @@
 
             <div style="padding:28px 28px 8px;display:flex;align-items:center;gap:18px;">
                 <div style="position:relative;flex-shrink:0;">
-                    <div style="width:76px;height:76px;border-radius:50%;overflow:hidden;background:var(--primary-light);display:flex;align-items:center;justify-content:center;border:2px solid var(--border);">
+                    <div style="position:relative;width:76px;height:76px;border-radius:50%;overflow:hidden;background:var(--primary-light);display:flex;align-items:center;justify-content:center;border:2px solid var(--border);">
                         @if ($user->profile_photo)
                         <img id="avatarPreview" src="{{ Storage::url($user->profile_photo) }}" style="width:100%;height:100%;object-fit:cover;" alt="Profile photo">
                         @else
@@ -35,6 +35,13 @@
                             {{ mb_substr($user->first_name ?: $user->full_name ?? 'U', 0, 1) }}
                         </span>
                         @endif
+                        {{-- Covers the avatar while the picked file decodes. A photo
+                             straight off a phone is several megabytes, and without
+                             this the old picture just sits there looking like the
+                             click did nothing. --}}
+                        <div id="avatarSpinner" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:var(--primary-light);">
+                            <i class="fa-solid fa-spinner fa-spin" style="color:var(--primary);font-size:20px;"></i>
+                        </div>
                     </div>
                 </div>
                 <div style="min-width:0;">
@@ -89,17 +96,7 @@
                         </div>
                     </label>
                     <input type="file" id="profile_photo" name="profile_photo" accept="image/jpeg,image/png,image/jpg,image/webp" style="display:none;"
-                           onchange="
-                               var f = this.files[0];
-                               document.getElementById('fileNameLabel').textContent = f ? f.name : 'PNG or JPG, up to 5MB';
-                               if (f) {
-                                   var url = URL.createObjectURL(f);
-                                   var img = document.getElementById('avatarPreview');
-                                   var initial = document.getElementById('avatarInitial');
-                                   img.src = url; img.style.display = 'block';
-                                   if (initial) initial.style.display = 'none';
-                               }
-                           ">
+                           onchange="budgetraPreviewAvatar(this)">
                     @error('profile_photo') <span style="display:block;font-size:11px;color:#DC2626;margin-top:4px;">{{ $message }}</span> @enderror
                 </div>
 
@@ -280,4 +277,39 @@
     div[style*="grid-template-columns:1fr 1fr"][style*="align-items:stretch"] { grid-template-columns: 1fr !important; }
 }
 </style>
+
+{{-- Inline rather than pushed: this view renders under layouts.admin for an
+     admin account, and that layout has no @stack('scripts') to push into. --}}
+<script>
+    function budgetraPreviewAvatar(input) {
+        var file    = input.files[0];
+        var label   = document.getElementById('fileNameLabel');
+        var img     = document.getElementById('avatarPreview');
+        var initial = document.getElementById('avatarInitial');
+        var spinner = document.getElementById('avatarSpinner');
+
+        label.textContent = file ? file.name : 'PNG or JPG, up to 5MB';
+        if (!file) return;
+
+        spinner.style.display = 'flex';
+
+        var url = URL.createObjectURL(file);
+
+        // Swap only once the browser has actually decoded it, so the spinner
+        // measures the real wait instead of a made-up one.
+        img.onload = function () {
+            spinner.style.display = 'none';
+            img.style.display     = 'block';
+            if (initial) initial.style.display = 'none';
+            URL.revokeObjectURL(url);
+        };
+        img.onerror = function () {
+            spinner.style.display = 'none';
+            label.textContent     = 'That file could not be read — pick another.';
+            URL.revokeObjectURL(url);
+        };
+
+        img.src = url;
+    }
+</script>
 @endsection

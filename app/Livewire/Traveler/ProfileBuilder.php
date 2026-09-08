@@ -257,6 +257,31 @@ class ProfileBuilder extends Component
         ));
     }
 
+    /**
+     * The whole step-4 selection, not a delta.
+     *
+     * Those cards are an Alpine island (wire:ignore), so the browser holds the
+     * live selection and tells the server what it now is. Sending the entire
+     * list on every change means a request that never lands is repaired by the
+     * next one; the per-click toggles this replaced desynced the two for good,
+     * and the traveler was then left on a screen full of ticks that Next Step
+     * refused to accept.
+     *
+     * Anything the browser sends that isn't in INTERESTS is dropped, and the
+     * canonical order is imposed here so two equal selections always store
+     * identically.
+     */
+    public function syncInterests(array $interests = [], array $subs = []): void
+    {
+        // Diving and Night Markets each sit under two interests, so the flat
+        // list of every sub-interest has to be de-duplicated before it can be
+        // used as a filter.
+        $knownSubs = array_values(array_unique(array_merge(...array_values(self::INTERESTS))));
+
+        $this->selectedInterests    = array_values(array_intersect(array_keys(self::INTERESTS), $interests));
+        $this->selectedSubInterests = array_values(array_intersect($knownSubs, $subs));
+    }
+
     public function toggleInterest(string $interest): void
     {
         if (in_array($interest, $this->selectedInterests)) {
@@ -392,7 +417,10 @@ class ProfileBuilder extends Component
 
     public function confirmProfile(): void
     {
-        if (! $this->persistProfile()) return;   // stay put, saveError is shown
+        if (! $this->persistProfile()) {
+            $this->dispatch('profile-save-failed');
+            return;   // stay put, saveError is shown
+        }
 
         $this->redirect(route($this->returnTo ?: 'trips.plan'), navigate: true);
     }
@@ -411,7 +439,10 @@ class ProfileBuilder extends Component
 
         $this->resetErrorBag();
 
-        if (! $this->persistProfile()) return;   // stay put, saveError is shown
+        if (! $this->persistProfile()) {
+            $this->dispatch('profile-save-failed');
+            return;   // stay put, saveError is shown
+        }
 
         $this->redirect(route($this->returnTo ?: 'dashboard'), navigate: true);
     }

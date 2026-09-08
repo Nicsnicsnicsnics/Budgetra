@@ -89,6 +89,19 @@
        form (it is what the POST, checkValidity() and the OCR autofill
        all talk to) but is drawn over by a trigger + menu built from
        the same tokens as the Expenses filter dropdown. */
+    /* The themed select trigger is a positioned sibling rendered after the
+       absolutely-placed .input-icon, so its opaque .form-control background
+       painted straight over it and the Trip/Category icons never showed — the
+       36px of reserved padding sat empty. Lift the icon above the trigger and
+       let clicks fall through to it. */
+    .input-wrapper .input-icon { z-index: 2; pointer-events: none; }
+
+    /* Amounts are typed, not stepped, and the spinner crowded the invalid
+       outline. */
+    #amount::-webkit-outer-spin-button,
+    #amount::-webkit-inner-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
+    #amount { -moz-appearance: textfield; appearance: textfield; }
+
     .exp-select { position: relative; }
     .exp-select-native {
         position: absolute; inset: 0; width: 100%; height: 100%;
@@ -148,7 +161,6 @@
     .dropzone.ocr-active .dz-prompt-icon { background: var(--bg-white); }
     .dz-prompt-title { font-size: 16px; font-weight: 700; color: var(--dark); }
     .dz-prompt-title span { color: var(--primary); }
-    .dz-prompt-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
     .dz-format-tags { display: flex; gap: 8px; margin-top: 14px; }
     .dz-format-tag {
         font-size: 11px; font-weight: 700; letter-spacing: .02em; color: var(--muted);
@@ -216,7 +228,6 @@
                         <div class="dz-prompt-icon"><i class="fa-solid fa-cloud-arrow-up"></i></div>
                         <div>
                             <div class="dz-prompt-title"><span>Click to upload</span> a receipt</div>
-                            <div class="dz-prompt-hint">or drag and drop it in here</div>
                             <div class="dz-format-tags">
                                 <span class="dz-format-tag">PNG</span>
                                 <span class="dz-format-tag">JPG</span>
@@ -313,8 +324,14 @@
                             </select>
                             <div class="input-wrapper" style="flex:1;">
                                 <span class="input-icon"><i class="fa-solid fa-coins"></i></span>
-                                <input type="number" id="amount" name="amount" step="0.01" min="0.01"
-                                       value="{{ old('amount') }}"
+                                {{-- type=text, not number: a number input rejects the
+                                     thousands separators, so grouping is impossible
+                                     while typing. The digits-and-one-dot filter below
+                                     does the job type=number was doing, and store()
+                                     strips the separators before validating. --}}
+                                <input type="text" id="amount" name="amount"
+                                       inputmode="decimal" autocomplete="off"
+                                       value="{{ is_numeric(old('amount')) ? number_format((float) old('amount'), 2) : old('amount') }}"
                                        class="form-control {{ $errors->has('amount') ? 'is-invalid' : '' }}"
                                        placeholder="0.00" required>
                             </div>
@@ -547,6 +564,50 @@
         updateCurrencyHint();
     }
 
+    // Group the whole part with commas as it is typed, the way the budget field
+    // in manual planning does. That one is integer-only; an expense needs the
+    // cents, so the decimal part is carried through untouched (max 2 places)
+    // and a trailing "." survives mid-typing.
+    function formatAmount(raw) {
+        var cleaned = String(raw).replace(/[^0-9.]/g, '');
+        var dot     = cleaned.indexOf('.');
+        if (dot !== -1) {
+            cleaned = cleaned.slice(0, dot + 1) + cleaned.slice(dot + 1).replace(/\./g, '');
+        }
+
+        var parts = cleaned.split('.');
+        var whole = parts[0].replace(/^0+(?=\d)/, '').slice(0, 12);
+        var out   = whole ? parseInt(whole, 10).toLocaleString('en-US') : (parts.length > 1 ? '0' : '');
+        if (parts.length > 1) out += '.' + parts[1].slice(0, 2);
+
+        return out;
+    }
+    window.budgetraFormatAmount = formatAmount;
+
+    if (amountInput) {
+        // Belt and braces with the filter: blocking the keystroke avoids the
+        // character appearing and being stripped a frame later.
+        amountInput.addEventListener('keydown', function (ev) {
+            if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+            if (ev.key === 'e' || ev.key === 'E' || ev.key === '+' || ev.key === '-') {
+                ev.preventDefault();
+            }
+        });
+        amountInput.addEventListener('input', function () {
+            this.value = formatAmount(this.value);
+        });
+
+        // The separators are display only — strip them so the POST carries a
+        // plain decimal. store() strips them again server-side, since a form
+        // submitted without JS never runs this.
+        var amountForm = amountInput.form;
+        if (amountForm) {
+            amountForm.addEventListener('submit', function () {
+                amountInput.value = amountInput.value.replace(/,/g, '');
+            });
+        }
+    }
+
     if (!dropZone) return; // no trips: the form isn't on the page at all
 
     function showPreview(file) {
@@ -633,7 +694,7 @@
             .then(function (data) {
                 scanOverlay.classList.remove('is-active');
                 dropZone.classList.remove('ocr-active');
-                if (data.amount)      { amountInput.value = data.amount; markOcrFilled(amountInput); }
+                if (data.amount)      { amountInput.value = window.budgetraFormatAmount ? window.budgetraFormatAmount(data.amount) : data.amount; markOcrFilled(amountInput); }
                 // The scan reports which currency the receipt was printed in, so
                 // a ¥ receipt lands as yen rather than as the same number in pesos.
                 if (data.currency && currencySelect) {

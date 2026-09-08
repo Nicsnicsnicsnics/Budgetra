@@ -75,8 +75,8 @@
 @endif
 
 {{-- Reviews --}}
-<div x-data="{ showReviewForm: false }">
-<div class="mb-24" id="reviews">
+<div x-data="{ showReviewForm: false, busy: false }">
+<div class="mb-24 @if ($totalReviews === 0) atd-reviews-bare @endif" id="reviews">
     <div class="atd-rev-controls">
         <h2 class="atd-section-title" style="margin:0;">Reviews</h2>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -240,7 +240,8 @@
     $modalBody   = $hasReviewed ? $myReview->body   : old('body');
 @endphp
 <div class="atd-modal-backdrop" x-show="showReviewForm" x-cloak style="display:none;"
-     @click="if (event.target === $el) showReviewForm = false" @keydown.escape.window="showReviewForm = false">
+     @click="if (event.target === $el && !busy) showReviewForm = false"
+     @keydown.escape.window="if (!busy) showReviewForm = false">
     <div class="atd-modal-card">
         <div class="atd-modal-header">
             <div class="atd-modal-icon"><i class="fa-solid fa-pen"></i></div>
@@ -249,7 +250,8 @@
         @if ($errors->any())
         <div class="alert alert-danger mb-16">{{ $errors->first() }}</div>
         @endif
-        <form method="POST" action="{{ $hasReviewed ? route('reviews.update', $myReview) : route('reviews.store') }}">
+        <form method="POST" action="{{ $hasReviewed ? route('reviews.update', $myReview) : route('reviews.store') }}"
+              x-on:submit="busy = true">
             @csrf
             @if ($hasReviewed)
             @method('PUT')
@@ -277,10 +279,12 @@
                 @error('body')<div class="error">{{ $message }}</div>@enderror
             </div>
 
-            <button type="submit" class="atd-submit-btn">
-                <i class="fa-solid fa-paper-plane"></i> {{ $hasReviewed ? 'Save Changes' : 'Submit Review' }}
+            <button type="submit" class="atd-submit-btn" :disabled="busy">
+                <span x-show="!busy"><i class="fa-solid fa-paper-plane"></i> {{ $hasReviewed ? 'Save Changes' : 'Submit Review' }}</span>
+                <span x-show="busy" x-cloak><i class="fa-solid fa-spinner fa-spin"></i></span>
             </button>
-            <button type="button" class="atd-modal-cancel-btn" @click="showReviewForm = false">Close</button>
+            <button type="button" class="atd-modal-cancel-btn" :disabled="busy"
+                    @click="showReviewForm = false">Close</button>
         </form>
     </div>
 </div>
@@ -381,6 +385,13 @@
     }
     .atd-rev-bar-track { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
     .atd-rev-bar-fill { height: 100%; background: #F5A623; border-radius: 3px; }
+
+    /* The summary card above floats up over the hero and carries the gap
+       below it. An attraction with no reviews yet renders no summary card, so
+       nothing supplied any spacing and this row sat flush against the bottom
+       of the photo — the one case where "Write a review" matters most. The
+       gap is the same 28px either way. */
+    .atd-reviews-bare { margin-top: 28px; }
 
     .atd-rev-controls {
         display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
@@ -545,6 +556,15 @@
     }
     .atd-submit-btn:hover { background: var(--primary-dark); transform: translateY(-1px); }
     .atd-submit-btn:active { transform: translateY(0); }
+    .atd-submit-btn[disabled], .atd-modal-cancel-btn[disabled] {
+        opacity: .65; cursor: default; transform: none;
+    }
+    .atd-submit-btn[disabled]:hover { background: var(--primary); transform: none; }
+    /* The label and the spinner are each wrapped in a span now, so the button's
+       own flex gap sits between them rather than between the icon and its
+       text. A class, not an inline style: x-show clears inline display when it
+       reveals an element, which would take an inline-flex with it. */
+    .atd-submit-btn > span { display: inline-flex; align-items: center; gap: 8px; }
 
     /* Interactive star-rating picker: markup is 5→1 in DOM order so the
        CSS sibling-combinator hover/checked trick can light up "this star

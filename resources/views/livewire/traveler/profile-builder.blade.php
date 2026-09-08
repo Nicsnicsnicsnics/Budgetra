@@ -48,8 +48,7 @@
 /* Card pickers shake the cards themselves rather than their scroll container:
    .int-scroll is overflow-x:auto and holds the absolutely-tracked side panel,
    so transforming it would drag that along. */
-.int-card-img.is-bad{box-shadow:0 0 0 2px #FF3B3B;
-    animation:pb-shake .48s cubic-bezier(.36,.07,.19,.97) both;}
+.int-card-img.is-bad{animation:pb-shake .48s cubic-bezier(.36,.07,.19,.97) both;}
 @keyframes pb-shake{
   10%,90%{transform:translateX(-2px);}
   20%,80%{transform:translateX(3px);}
@@ -86,6 +85,21 @@
 .int-card-img:hover .int-card-img-bg::before{background:linear-gradient(180deg,rgba(0,0,0,0.05) 0%,rgba(0,0,0,0.5) 100%);}
 .int-card-img .int-check{position:absolute;top:10px;right:10px;z-index:2;width:24px;height:24px;border-radius:50%;background:var(--primary);color:#fff;display:none;align-items:center;justify-content:center;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,0.25);}
 .int-card-img.active .int-check{display:flex;}
+/* Every state's ring is painted on the image box rather than around the card.
+   .int-scroll is overflow-x:auto, which clips vertically too, so the outer
+   box-shadow the red state used was sliced off along the card's top edge. The
+   ::before scrim is inset:0 against the padding box, so it sits under the
+   border instead of over it.
+   A translucent white hairline rather than --border: these sit on photographs,
+   where a surface-coloured border reads as a smudge on one image and vanishes
+   on the next. is-bad is last so red outranks the selected ring. */
+.int-card-img-bg{box-sizing:border-box;border:2px solid rgba(255,255,255,.20);transition:border-color .15s;}
+.int-card-img:hover .int-card-img-bg{border-color:rgba(255,255,255,.42);}
+.int-card-img.active .int-card-img-bg{border-color:var(--primary);}
+.int-card-img.is-bad .int-card-img-bg{border-color:#FF3B3B;}
+/* The badge is also the way to clear the interest, since the card body only
+   opens the list now. Darkens on hover so it reads as its own control. */
+.int-card-img .int-check:hover{background:var(--primary-dark);}
 .int-icon-img{position:relative;z-index:1;width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,0.9);display:flex;align-items:center;justify-content:center;margin:0 0 10px;}
 .int-label-img{position:relative;z-index:1;font-size:14px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,0.4);}
 
@@ -99,7 +113,7 @@
 .sub-list-item.active .sub-check{background:var(--bg-white);border-color:#fff;color:var(--primary);}
 
 /* Custom horizontal scrollbar for the interest row */
-.int-scroll{scrollbar-width:thin;scrollbar-color:#E8B187 var(--bg);}
+.int-scroll{padding-top:4px;scrollbar-width:thin;scrollbar-color:#E8B187 var(--bg);}
 .int-scroll::-webkit-scrollbar{height:8px;}
 .int-scroll::-webkit-scrollbar-track{background:var(--bg);border-radius:8px;}
 .int-scroll::-webkit-scrollbar-thumb{background:#E8B187;border-radius:8px;}
@@ -123,6 +137,41 @@
 .rv-icon-sm{width:26px;height:26px;border-radius:8px;background:var(--bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--primary);font-size:11px;}
 .rv-edit{font-size:12px;font-weight:700;color:var(--primary);cursor:pointer;white-space:nowrap;flex-shrink:0;text-decoration:none;}
 .rv-edit:hover{text-decoration:underline;}
+
+/* ── Step 4: sub-interest search ──────────────────────────────────
+   The nine interest cards scroll sideways and each hides its eight
+   sub-interests behind a click, so finding one specific thing meant
+   opening panels until it turned up. This searches all 72 at once. */
+.int-search-wrap{position:relative;max-width:520px;margin:0 auto 14px;}
+/* Bordered off --muted, not --border: on Nightflight --border is #2A2F3D
+   against the #1C202B field, about 1.2:1, and the box read as a smudge
+   rather than something you can type into. */
+.int-search{display:flex;align-items:center;gap:10px;background:var(--bg-white);border:1.5px solid var(--border);border-radius:12px;padding:11px 14px;transition:border-color .15s ease;}
+@supports (color: color-mix(in srgb, red, blue)) {
+  .int-search{border-color:color-mix(in srgb, var(--muted) 45%, transparent);}
+}
+.int-search:focus-within{border-color:var(--primary);}
+.int-search:focus-within{border-color:var(--primary);}
+.int-search input{flex:1;min-width:0;border:none;outline:none;background:transparent;font-family:inherit;font-size:14px;color:var(--dark);}
+.int-search input::placeholder{color:var(--muted);}
+.int-search i{color:var(--muted);font-size:13px;flex-shrink:0;}
+.int-search-clear{background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;padding:0;line-height:1;font-family:inherit;}
+.int-search-clear:hover{color:var(--dark);}
+
+.int-search-results{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:40;background:var(--bg-white);border:1.5px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg);overflow:hidden;max-height:280px;overflow-y:auto;}
+.int-search-item{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;font-size:13.5px;color:var(--dark);border:none;background:none;width:100%;text-align:left;font-family:inherit;}
+.int-search-item:hover{background:var(--primary-light);}
+.int-search-item .parents{margin-left:auto;font-size:11px;color:var(--muted);white-space:nowrap;}
+.int-search-item .tick{width:15px;flex-shrink:0;color:var(--primary);font-size:11px;}
+.int-search-empty{padding:14px;font-size:13px;color:var(--muted);text-align:center;}
+
+/* Selected sub-interests, so what's picked is visible without reopening
+   every panel to look for ticks. */
+.int-pills{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:760px;margin:0 auto 18px;}
+.int-pill{display:inline-flex;align-items:center;gap:8px;background:var(--primary-light);color:var(--primary);border:1.5px solid var(--primary);border-radius:20px;padding:5px 8px 5px 13px;font-size:12.5px;font-weight:700;}
+.int-pill button{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:50%;border:none;background:var(--primary);color:#fff;cursor:pointer;font-size:9px;padding:0;font-family:inherit;flex-shrink:0;}
+.int-pill button:hover{background:var(--primary-dark);}
+
 [x-cloak]{display:none!important;}
 </style>
 
@@ -533,54 +582,159 @@
     <h1 style="font-size:22px;font-weight:800;color:var(--dark);text-align:center;margin:0 0 8px;">What do you enjoy doing?</h1>
     <p style="font-size:13px;color:var(--muted);text-align:center;margin:0 0 28px;">Select all travel interests that apply to your exploration style.</p>
 
-    <div class="int-scroll"
-         x-data="{
+    <div x-data="{
             expanded: '{{ $expandedInterest }}',
             selected: @js($selectedInterests),
             subs: @js($selectedSubInterests),
             interestSubs: @js($interests),
-            toggleInterest(name) {
-                this.expanded = (this.expanded === name ? '' : name);
-                const i = this.selected.indexOf(name);
-                if (i === -1) {
-                    this.selected.push(name);
-                } else {
-                    this.selected.splice(i, 1);
-                    const subsForName = this.interestSubs[name] || [];
-                    this.subs = this.subs.filter(s => !subsForName.includes(s));
-                }
-                $wire.toggleInterest(name);
+            query: '',
+            open: false,
+
+            // Every sub-interest whose name contains what was typed. A few
+            // names sit under two interests (Diving is Beach and Adventure,
+            // Night Markets is Shopping and Nightlife) and the stored list is
+            // flat, so each appears once here with both parents named.
+            get results() {
+                const q = this.query.trim().toLowerCase();
+                if (!q) return [];
+                const out = [];
+                Object.entries(this.interestSubs).forEach(([name, list]) => {
+                    list.forEach(sub => {
+                        if (!sub.toLowerCase().includes(q)) return;
+                        const hit = out.find(r => r.sub === sub);
+                        if (hit) { if (!hit.parents.includes(name)) hit.parents.push(name); }
+                        else out.push({ sub: sub, parents: [name] });
+                    });
+                });
+                return out.sort((a, b) => a.sub.localeCompare(b.sub));
             },
-            toggleSub(name, sub) {
+
+            // One push of the whole selection per interaction, rather than a
+            // stream of toggles — see syncInterests(). The store copy is what
+            // the Next Step button reads, since that button sits outside this
+            // island and cannot see this scope.
+            push() {
+                $store.pbInterests.selected = [...this.selected];
+                $store.pbInterests.subs     = [...this.subs];
+                $store.pbBad.interests      = false;
+                $wire.syncInterests([...this.selected], [...this.subs]);
+            },
+
+            // Opening the card's list is all a card click does. Ticking is the
+            // sub-interests' job: a card that expanded AND toggled meant you
+            // could not re-read a list without turning that interest back off,
+            // so browsing the cards quietly emptied the selection.
+            expand(name) {
+                this.expanded = (this.expanded === name ? '' : name);
+            },
+
+            // An interest is ticked once one of its own sub-interests is, and
+            // unticked when its last one goes. Only the interests that own
+            // this sub are considered, which is what leaves an older profile's
+            // sub-less tick alone.
+            syncParents(sub) {
+                Object.entries(this.interestSubs).forEach(([name, list]) => {
+                    if (!list.includes(sub)) return;
+                    const anySelected = list.some(s => this.subs.includes(s));
+                    const isSelected  = this.selected.includes(name);
+                    if (anySelected && !isSelected) this.selected.push(name);
+                    else if (!anySelected && isSelected) this.selected.splice(this.selected.indexOf(name), 1);
+                });
+            },
+
+            // The one place a sub-interest changes, so the panel, the search
+            // results and the pills cannot drift from each other.
+            toggleSub(sub) {
                 const i = this.subs.indexOf(sub);
                 if (i === -1) { this.subs.push(sub); } else { this.subs.splice(i, 1); }
-                $wire.toggleSubInterest(sub);
+                this.syncParents(sub);
+                this.push();
+            },
 
-                const anySelected = (this.interestSubs[name] || []).some(s => this.subs.includes(s));
-                const isSelected = this.selected.includes(name);
-                if (anySelected && !isSelected) {
-                    this.selected.push(name);
-                    $wire.toggleInterest(name);
-                } else if (!anySelected && isSelected) {
-                    this.selected.splice(this.selected.indexOf(name), 1);
-                    $wire.toggleInterest(name);
-                }
+            pickSub(sub) {
+                if (!this.subs.includes(sub)) this.toggleSub(sub);
+                this.query = '';
+                this.open  = false;
+            },
+
+            removeSub(sub) {
+                if (this.subs.includes(sub)) this.toggleSub(sub);
+            },
+
+            // The tick badge clears the interest. Without it an interest saved
+            // before this rule existed — ticked with no sub-interests under it
+            // — could never be removed, because the card body no longer
+            // toggles anything.
+            clearInterest(name) {
+                const mine = (this.interestSubs[name] || []).filter(s => this.subs.includes(s));
+                mine.forEach(s => this.subs.splice(this.subs.indexOf(s), 1));
+                mine.forEach(s => this.syncParents(s));
+                const i = this.selected.indexOf(name);
+                if (i !== -1) this.selected.splice(i, 1);
+                this.push();
             }
          }"
-         wire:ignore
-         style="display:flex;gap:16px;align-items:stretch;flex-wrap:nowrap;overflow-x:auto;padding-bottom:16px;">
+         wire:ignore>
+
+
+        {{-- Search across every sub-interest at once. Nine cards scroll
+             sideways and each keeps its eight sub-interests behind a click,
+             so finding one specific thing meant opening panels until it
+             turned up. --}}
+        <div class="int-search-wrap" x-on:click.outside="open = false">
+            <div class="int-search">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" x-model="query" x-on:focus="open = true"
+                       x-on:keydown.escape="query = ''; open = false"
+                       placeholder="Search interests">
+                <button type="button" class="int-search-clear" x-show="query" x-cloak
+                        x-on:click="query = ''; open = false" aria-label="Clear search">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="int-search-results" x-show="open && query.trim()" x-cloak>
+                <template x-for="r in results" :key="r.sub">
+                    <button type="button" class="int-search-item" x-on:click="pickSub(r.sub)">
+                        <span class="tick"><i class="fa-solid fa-check" x-show="subs.includes(r.sub)" x-cloak></i></span>
+                        <span x-text="r.sub"></span>
+                        <span class="parents" x-text="r.parents.join(' · ')"></span>
+                    </button>
+                </template>
+                <div class="int-search-empty" x-show="!results.length" x-cloak>
+                    Nothing matches that.
+                </div>
+            </div>
+        </div>
+
+        {{-- What's picked so far, so it's visible without reopening every
+             panel to hunt for ticks. --}}
+        <div class="int-pills" x-show="subs.length" x-cloak>
+            <template x-for="sub in subs" :key="sub">
+                <span class="int-pill">
+                    <span x-text="sub"></span>
+                    <button type="button" x-on:click="removeSub(sub)" :aria-label="'Remove ' + sub">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </span>
+            </template>
+        </div>
+
+        <div class="int-scroll"
+             style="display:flex;gap:16px;align-items:stretch;flex-wrap:nowrap;overflow-x:auto;padding-bottom:16px;">
         @foreach($interests as $name => $subs)
         <div class="int-card-img"
              :class="{ 'active': selected.includes('{{ $name }}'), 'is-bad': $store.pbBad.interests }"
              style="flex:0 0 260px;height:300px;"
-             x-on:click="toggleInterest('{{ $name }}'); $store.pbBad.interests = false">
+             x-on:click="expand('{{ $name }}')">
             <div class="int-card-img-bg" style="background-image:url('{{ asset('stockimages/' . ($images[$name] ?? '')) }}');">
                 <div class="int-icon-img" style="width:64px;height:64px;">
                     <i class="fa-solid {{ $icons[$name] ?? 'fa-star' }}" style="font-size:28px;color:var(--primary);"></i>
                 </div>
                 <div class="int-label-img" style="font-size:18px;">{{ $name }}</div>
             </div>
-            <div class="int-check"><i class="fa-solid fa-check"></i></div>
+            <div class="int-check" x-on:click.stop="clearInterest('{{ $name }}')"
+                 title="Clear {{ $name }}"><i class="fa-solid fa-check"></i></div>
         </div>
 
         @if(isset($interests[$name]))
@@ -594,7 +748,7 @@
             <div class="sub-list">
                 @foreach($interests[$name] as $sub)
                 <div class="sub-list-item" :class="subs.includes('{{ $sub }}') ? 'active' : ''"
-                     x-on:click="toggleSub('{{ $name }}', '{{ $sub }}')">
+                     x-on:click="toggleSub('{{ $sub }}')">
                     <span class="sub-check" x-show="subs.includes('{{ $sub }}')" x-cloak><i class="fa-solid fa-check"></i></span>
                     <span class="sub-check" x-show="!subs.includes('{{ $sub }}')" x-cloak></span>
                     <span>{{ $sub }}</span>
@@ -604,6 +758,7 @@
         </div>
         @endif
         @endforeach
+        </div>
     </div>
 </div>
 
@@ -628,18 +783,43 @@
     @endif
 
     @if($returnTo)
-    <button class="pb-btn pb-btn-primary" wire:click="saveAndReturn" wire:loading.attr="disabled">
-        <span wire:loading.remove wire:target="saveAndReturn"><i class="fa-solid fa-check" style="font-size:11px;"></i> Save Changes</span>
-        <span wire:loading wire:target="saveAndReturn"><i class="fa-solid fa-spinner fa-spin"></i></span>
+    {{-- The spinner has to outlast the Livewire request. Both of these end in
+         a wire:navigate redirect, and the fetch for the next page runs after
+         this commit has already finished — so wire:loading stopped, the button
+         flicked back to its label, and it sat there idle for the whole
+         navigation. It latches on the click instead, and only a refused save
+         (or a missing field) lets it go. --}}
+    <button class="pb-btn pb-btn-primary"
+            x-data="{ busy: false }" :disabled="busy"
+            x-on:profile-save-failed.window="busy = false"
+            x-on:profile-missing.window="busy = false"
+            @if($step === 4)
+            x-on:click="busy = true; $wire.syncInterests([...$store.pbInterests.selected], [...$store.pbInterests.subs]); $wire.saveAndReturn()"
+            @else
+            x-on:click="busy = true" wire:click="saveAndReturn"
+            @endif>
+        <span x-show="!busy"><i class="fa-solid fa-check" style="font-size:11px;"></i> Save Changes</span>
+        <span x-show="busy" x-cloak><i class="fa-solid fa-spinner fa-spin"></i></span>
+    </button>
+    @elseif($step === 4)
+    <button class="pb-btn pb-btn-primary" x-data wire:loading.attr="disabled" wire:target="nextStep"
+            x-on:click="$wire.syncInterests([...$store.pbInterests.selected], [...$store.pbInterests.subs]); $wire.nextStep()">
+        <span wire:loading.remove wire:target="nextStep">Next Step <i class="fa-solid fa-arrow-right" style="font-size:11px;"></i></span>
+        <span wire:loading wire:target="nextStep"><i class="fa-solid fa-spinner fa-spin"></i></span>
     </button>
     @elseif($step < 7)
-    <button class="pb-btn pb-btn-primary" wire:click="nextStep">
-        Next Step <i class="fa-solid fa-arrow-right" style="font-size:11px;"></i>
+    <button class="pb-btn pb-btn-primary" wire:click="nextStep" wire:loading.attr="disabled" wire:target="nextStep">
+        <span wire:loading.remove wire:target="nextStep">Next Step <i class="fa-solid fa-arrow-right" style="font-size:11px;"></i></span>
+        <span wire:loading wire:target="nextStep"><i class="fa-solid fa-spinner fa-spin"></i></span>
     </button>
     @else
-    <button class="pb-btn pb-btn-primary" wire:click="confirmProfile" wire:loading.attr="disabled">
-        <span wire:loading.remove wire:target="confirmProfile">Confirm Profile</span>
-        <span wire:loading wire:target="confirmProfile"><i class="fa-solid fa-spinner fa-spin"></i></span>
+    {{-- Latched rather than wire:loading, for the reason on Save Changes
+         above: the wire:navigate that follows outlasts this commit. --}}
+    <button class="pb-btn pb-btn-primary" wire:click="confirmProfile"
+            x-data="{ busy: false }" x-on:click="busy = true" :disabled="busy"
+            x-on:profile-save-failed.window="busy = false">
+        <span x-show="!busy">Confirm Profile</span>
+        <span x-show="busy" x-cloak><i class="fa-solid fa-spinner fa-spin"></i></span>
     </button>
     @endif
 </div>
@@ -671,6 +851,11 @@
             },
         }
     ));
+
+    Alpine.store('pbInterests', {
+        selected: @js($selectedInterests),
+        subs:     @js($selectedSubInterests),
+    });
 
     window.addEventListener('profile-missing', e => Alpine.store('pbBad').flag(e.detail?.fields));
 </script>

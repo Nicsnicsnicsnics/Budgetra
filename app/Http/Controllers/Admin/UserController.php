@@ -136,10 +136,22 @@ class UserController extends Controller
         return back()->with('success', "User {$action}.");
     }
 
-    public function destroy(User $user)
+    // Takes the raw id rather than a route-model-bound User on purpose.
+    // Binding firstOrFail()s, so a second DELETE for a user already removed
+    // answered 404 — and it happens easily: a Supabase round-trip here runs
+    // well over a second, during which the button looks like it did nothing,
+    // so admins click Delete again. The first click deleted them, the second
+    // put a 404 page on screen. Deleting something already deleted is a
+    // success from the caller's side, so say so.
+    public function destroy(string $user)
     {
-        abort_if($user->id === auth()->id(), 403, 'Cannot delete yourself.');
-        $user->delete();
-        return redirect()->route('admin.users.index')->with('success', 'User deleted.');
+        $id = (int) $user;
+        abort_if($id === auth()->id(), 403, 'Cannot delete yourself.');
+
+        User::find($id)?->delete();
+
+        // No flash: the row vanishing from the list is the confirmation, and a
+        // banner for it only pushes the table down on the way back.
+        return redirect()->route('admin.users.index');
     }
 }

@@ -255,7 +255,7 @@ $originCountryLabel = \App\Support\PlaceCatalog::originCountryFor(auth()->user()
                                 <template x-for="cell in startCells" :key="cell.key">
                                     <div class="cal-day"
                                          :class="{'selected': cell.d && cell.val===startVal, 'past': cell.past, 'empty': !cell.d}"
-                                         @click.stop="cell.d && !cell.past && pickDate('start',cell.d)"
+                                         @click.stop="cell.d && !cell.past && pickDate('start',cell.val)"
                                          x-text="cell.d||''"></div>
                                 </template>
                             </div>
@@ -288,7 +288,7 @@ $originCountryLabel = \App\Support\PlaceCatalog::originCountryFor(auth()->user()
                                 <template x-for="cell in endCells" :key="cell.key">
                                     <div class="cal-day"
                                          :class="{'selected': cell.d && cell.val===endVal, 'past': cell.past, 'empty': !cell.d}"
-                                         @click.stop="cell.d && !cell.past && pickDate('end',cell.d)"
+                                         @click.stop="cell.d && !cell.past && pickDate('end',cell.val)"
                                          x-text="cell.d||''"></div>
                                 </template>
                             </div>
@@ -341,18 +341,26 @@ window.pytManual = function (seed) {
         endLabel:   seed.endLabel   || '',
         startVal:   seed.startVal   || '',
         endVal:     seed.endVal     || '',
-        // Opening on the current month means opening on a grid that is mostly
-        // greyed out near month-end — on the 28th of a 31-day month only four
-        // days are pickable, which reads as a broken picker. Start on the next
-        // month when this one has almost nothing left; the traveller can always
-        // page back, and the remaining days stay selectable there.
+        // Which month each calendar opens on. A date already chosen wins, so
+        // that picking one re-opens where you were: every $wire.set() re-runs
+        // this factory, and seeding from `now` unconditionally snapped the
+        // grid back to the current month the instant you picked anything in a
+        // later one. Otherwise fall back to the current month, so today is on
+        // the grid and selectable.
         ...(function () {
-            const y = now.getFullYear(), m = now.getMonth() + 1;
-            const daysLeft = new Date(y, m, 0).getDate() - now.getDate() + 1;
-            const roomy = daysLeft >= 7 ? { y, m } : (m === 12 ? { y: y + 1, m: 1 } : { y, m: m + 1 });
+            const monthOf = (iso, fallback) => {
+                const m = /^(\d{4})-(\d{2})-/.exec(iso || '');
+                return m ? { y: +m[1], m: +m[2] } : fallback;
+            };
+            const today = { y: now.getFullYear(), m: now.getMonth() + 1 };
+            const s = monthOf(seed.startVal, today);
+            // The end grid follows the start date when no end is set yet —
+            // everything before it is disabled, so an earlier month would open
+            // fully greyed out.
+            const e = monthOf(seed.endVal, s);
             return {
-                startYear: roomy.y, startMonth: roomy.m,
-                endYear:   roomy.y, endMonth:   roomy.m,
+                startYear: s.y, startMonth: s.m,
+                endYear:   e.y, endMonth:   e.m,
             };
         })(),
         startCells: [],
@@ -415,12 +423,42 @@ window.pytManual = function (seed) {
             this.$wire.proceedFromTripDetails();
         },
 
+        // Pull a date back from the server into the local label/value/month.
+        // The server owns these: updatedStartDate()/updatedEndDate() clear the
+        // opposite date whenever a range inverts, and the seed is read once at
+        // init and never again. Without this the field keeps rendering a value
+        // the server has already dropped — a filled box that will not clear, or
+        // a "Select date" placeholder over a date that is really set, with the
+        // other calendar's bounds computed from the stale value either way.
+        syncDate(which, val) {
+            val = val || '';
+            const isStart = which === 'start';
+            if ((isStart ? this.startVal : this.endVal) === val) return;
+
+            const label = val
+                ? this.abbrevMonth(+val.slice(5, 7)) + ' ' + val.slice(8, 10) + ', ' + val.slice(0, 4)
+                : '';
+            if (isStart) {
+                this.startVal = val; this.startLabel = label;
+                if (val) { this.startYear = +val.slice(0, 4); this.startMonth = +val.slice(5, 7); }
+            } else {
+                this.endVal = val; this.endLabel = label;
+                if (val) { this.endYear = +val.slice(0, 4); this.endMonth = +val.slice(5, 7); }
+            }
+            this.rebuildCells();
+        },
+
         init() {
             this.rebuildCells();
             this.$watch('startYear',  () => this.rebuildCells());
             this.$watch('startMonth', () => this.rebuildCells());
             this.$watch('endYear',    () => this.rebuildCells());
             this.$watch('endMonth',   () => this.rebuildCells());
+
+            // Server is authoritative for the two dates — mirror it locally.
+            this.$wire.$watch('startDate', v => this.syncDate('start', v));
+            this.$wire.$watch('endDate',   v => this.syncDate('end',   v));
+
             document.addEventListener('click', () => this.closeCals());
 
             // No explicit "Save Draft" button — instead, whenever From/To/
@@ -442,11 +480,15 @@ window.pytManual = function (seed) {
             const first = new Date(y, m-1, 1).getDay();
             const days  = new Date(y, m, 0).getDate();
             const cells = [];
-            for (let i = 0; i < first; i++) cells.push({ d: null, key: 'e'+y+m+i, val: '', past: false });
+            // Keys are built from the padded ISO date. Concatenating the raw
+            // numbers collided across months — Jan 11 and Nov 1 both produced
+            // "d2026111" — which let x-for reuse one month's cell for another.
+            const ym = y + '-' + String(m).padStart(2,'0');
+            for (let i = 0; i < first; i++) cells.push({ d: null, key: 'e'+ym+'-'+i, val: '', past: false });
             for (let d = 1; d <= days; d++) {
-                const val = y + '-' + String(m).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+                const val = ym + '-' + String(d).padStart(2,'0');
                 const past = val < todayStr || (bound && (boundIsMin ? val < bound : val > bound));
-                cells.push({ d, key: 'd'+y+m+d, val, past });
+                cells.push({ d, key: 'd'+val, val, past });
             }
             return cells;
         },
@@ -515,13 +557,17 @@ window.pytManual = function (seed) {
             return abbr === 'Sep' ? 'Sept' : abbr;
         },
 
-        pickDate(which, d) {
-            const y = which === 'start' ? this.startYear : this.endYear;
-            const m = which === 'start' ? this.startMonth : this.endMonth;
-            const val = y + '-' + String(m).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+        // Takes the clicked cell's own ISO value, not a bare day number. The
+        // month state is re-seeded whenever a $wire.set() re-renders the card,
+        // so deriving the date from startMonth/endMonth at click time stored a
+        // day from whatever month the state had snapped back to — click the
+        // 15th in September, save the 15th of August.
+        pickDate(which, val) {
+            const [y, m, d] = val.split('-').map(Number);
             const label = this.abbrevMonth(m) + ' ' + String(d).padStart(2,'0') + ', ' + y;
             if (which === 'start') {
                 this.startVal = val; this.startLabel = label;
+                this.startYear = y; this.startMonth = m;
                 if (this.endVal && this.endVal < val) { this.endVal = ''; this.endLabel = ''; $wire.set('endDate', ''); }
                 // Move the end calendar to the start's month. Everything before
                 // the start date is disabled, so leaving it on an earlier month
@@ -529,6 +575,7 @@ window.pytManual = function (seed) {
                 if (!this.endVal) { this.endYear = y; this.endMonth = m; }
             } else {
                 this.endVal = val; this.endLabel = label;
+                this.endYear = y; this.endMonth = m;
                 if (this.startVal && this.startVal > val) { this.startVal = ''; this.startLabel = ''; $wire.set('startDate', ''); }
             }
             $wire.set(which === 'start' ? 'startDate' : 'endDate', val);
@@ -3630,7 +3677,7 @@ window.sortAttractions = function(dir) {
     </a>
     {{-- This tab has no "plan your first trip" button to skip to — Mode Select
          below *is* the next step, so that is what the skip reveals. --}}
-    <button type="button" class="empty-state-skip" onclick="budgetraSkipProfileSetup()">Skip this step</button>
+    <button type="button" class="empty-state-skip" onclick="budgetraSkipProfileSetup()">Skip for now</button>
 </div>
 </div>
 @endif
@@ -3642,7 +3689,7 @@ window.sortAttractions = function(dir) {
      first-time planners land straight on Manual/AI Powered Planning.
 
      Always rendered at step 0; when the profile is still missing it sits
-     behind the prompt above until "Skip this step" swaps them.
+     behind the prompt above until "Skip for now" swaps them.
 ═══════════════════════════════════════════════════════════════ --}}
 @if ($planningMode === '' && $step === 0)
 <div class="empty-state-swap" @if ($twNeedsProfile) data-empty-when="skipped" @endif>

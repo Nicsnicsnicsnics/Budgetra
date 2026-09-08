@@ -292,7 +292,7 @@
                           placeholder="Describe your trip details"
                           rows="1"
                           x-data
-                          x-on:input="$el.style.height='auto';$el.style.height=$el.scrollHeight+'px'"
+                          x-on:input="$el.style.height='auto';$el.style.height=$el.scrollHeight+'px';window.budgetraGroupBareNumber&&window.budgetraGroupBareNumber($el)"
                           x-on:keydown.enter.prevent="if (!$event.shiftKey) $wire.automateTrip()"></textarea>
                 <button type="button" wire:click="automateTrip" wire:loading.attr="disabled" wire:target="automateTrip" class="llm-send-btn" aria-label="Send">
                     <span wire:loading.remove wire:target="automateTrip"><i class="fa-solid fa-paper-plane" style="font-size:13px;"></i></span>
@@ -332,7 +332,7 @@
                           placeholder="Type your reply"
                           rows="1"
                           x-data
-                          x-on:input="$el.style.height='auto';$el.style.height=$el.scrollHeight+'px'"
+                          x-on:input="$el.style.height='auto';$el.style.height=$el.scrollHeight+'px';window.budgetraGroupBareNumber&&window.budgetraGroupBareNumber($el)"
                           x-on:keydown.enter.prevent="if (!$event.shiftKey) $wire.automateTrip()"></textarea>
                 <button type="button" wire:click="automateTrip" wire:loading.attr="disabled" wire:target="automateTrip" class="llm-send-btn" aria-label="Send">
                     <span wire:loading.remove wire:target="automateTrip"><i class="fa-solid fa-paper-plane" style="font-size:13px;"></i></span>
@@ -389,14 +389,9 @@
                     </div>
                     @endforeach
                 </div>
-                @if ($entry->ai_date_from && $entry->ai_date_to)
-                <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border-light);font-size:12px;color:var(--muted);">
-                    <i class="fa-regular fa-calendar" style="margin-right:5px;"></i>{{ $entry->ai_date_from }} – {{ $entry->ai_date_to }}
-                    @if ($entry->ai_budget_min || $entry->ai_budget_max)
-                        &nbsp;·&nbsp;{{ $this->displayAmount($entry->ai_budget_max ?: $entry->ai_budget_min, $entry->ai_currency) }}
-                    @endif
-                </div>
-                @endif
+                {{-- No summary footer. The dates and budget it restated are
+                     already in the transcript above, in the traveller's own
+                     messages and TARA's recap of them. --}}
             @else
                 {{-- List of past conversations --}}
                 @if ($this->conversationHistory->isEmpty())
@@ -432,11 +427,12 @@
                                 <div style="font-size:13px;font-weight:700;color:var(--dark);margin-bottom:3px;">
                                     {{ $past->ai_from ?: '—' }} to {{ $past->ai_to ?: '—' }}
                                 </div>
+                                {{-- When the conversation happened, and nothing else.
+                                     The trip's own start/end dates used to trail this
+                                     line, which read as a second date for the same
+                                     entry — they belong to the plan, not to the chat. --}}
                                 <div style="font-size:11px;color:var(--muted);">
                                     {{ $past->created_at->format('M j, Y · g:i A') }}
-                                    @if ($past->ai_date_from && $past->ai_date_to)
-                                        &nbsp;·&nbsp;{{ $past->ai_date_from }} – {{ $past->ai_date_to }}
-                                    @endif
                                 </div>
                             </button>
                             <button type="button" wire:click="confirmDeleteHistoryEntry({{ $past->id }})" title="Delete this conversation"
@@ -464,3 +460,42 @@
 @endif
 
 </div>
+
+{{-- Thousand separators while typing, matching the budget field in manual
+     planning. Deliberately only when the whole message is a number: this is a
+     free-text prompt, and grouping every digit run would rewrite "Sept 1 2026"
+     as "Sept 1 2,026", which parseDateRange()/strtotime() cannot read. A bare
+     number is what a budget answer looks like, and the budget parser already
+     accepts separators (parseMoneyToken strips them). --}}
+<script>
+window.budgetraGroupBareNumber = function (el) {
+    var raw = el.value;
+    if (!/^\s*\d[\d,]*(\.\d*)?\s*$/.test(raw)) return;
+
+    var lead  = raw.match(/^\s*/)[0];
+    var trail = raw.match(/\s*$/)[0];
+    var body  = raw.slice(lead.length, raw.length - trail.length);
+
+    // Count digits before the caret so it can be put back in the same place
+    // once the commas shift everything along.
+    var digitsBefore = (raw.slice(0, el.selectionStart).match(/\d/g) || []).length;
+
+    var parts = body.replace(/,/g, '').split('.');
+    // Grouped with a regex rather than Number().toLocaleString(), which loses
+    // precision past 15 digits.
+    var grouped = parts[0].replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    if (parts.length > 1) grouped += '.' + parts[1];
+    if (grouped === body) return;
+
+    el.value = lead + grouped + trail;
+
+    var seen = 0, pos = lead.length;
+    if (digitsBefore > 0) {
+        for (var i = 0; i < grouped.length; i++) {
+            if (/\d/.test(grouped[i])) seen++;
+            if (seen === digitsBefore) { pos = lead.length + i + 1; break; }
+        }
+    }
+    el.setSelectionRange(pos, pos);
+};
+</script>

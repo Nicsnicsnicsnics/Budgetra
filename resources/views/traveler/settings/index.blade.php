@@ -113,7 +113,9 @@
     .settings-toggle input:checked + .settings-toggle-track::before { transform: translateX(18px); }
     .settings-toggle input:disabled + .settings-toggle-track { opacity: .5; cursor: not-allowed; }
 
-    .settings-modal-backdrop { position: fixed; inset: 0; background: rgba(20,10,4,.45); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+    /* Neutral scrim, as everywhere else. A warm brown reads as a red cast on
+       the dark themes, where the page behind it is already near-black. */
+    .settings-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
     .settings-modal-card { background: var(--bg-white); border-radius: 20px; width: 100%; max-width: 380px; padding: 26px; box-shadow: 0 24px 70px rgba(45,27,20,.2); }
     .settings-input {
         width: 100%; background: var(--bg-white); border: 1.5px solid var(--border); border-radius: 10px;

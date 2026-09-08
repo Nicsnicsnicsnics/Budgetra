@@ -120,11 +120,15 @@
             </p>
             <button type="button" class="admin-modal-close" aria-label="Close" onclick="closeDeleteUserModal();"><i class="fa-solid fa-xmark"></i></button>
         </div>
-        <form id="deleteUserForm" method="POST">
+        {{-- The delete itself takes over a second against Supabase. Without
+             this the button sat there looking inert and got clicked again,
+             which is how the 404 page appeared: the second request asked to
+             delete a user the first one had already removed. --}}
+        <form id="deleteUserForm" method="POST" onsubmit="return budgetraLockDeleteUser(this);">
             @csrf @method('DELETE')
             <div class="admin-modal-actions">
                 <button type="button" class="admin-modal-btn admin-modal-btn-cancel" onclick="closeDeleteUserModal();">Cancel</button>
-                <button type="submit" class="admin-modal-btn admin-modal-btn-danger"><i class="fa-solid fa-trash"></i> Delete</button>
+                <button type="submit" class="admin-modal-btn admin-modal-btn-danger" id="deleteUserSubmit"><i class="fa-solid fa-trash"></i> Delete</button>
             </div>
         </form>
     </div>
@@ -170,6 +174,20 @@
 
     function closeDeleteUserModal() {
         document.getElementById('deleteUserModal').style.display = 'none';
+    }
+
+    // One submit only. Spinner while it runs, and Cancel goes inert too so the
+    // dialog can't be dismissed out from under an in-flight delete.
+    var deleteUserSubmitting = false;
+    function budgetraLockDeleteUser(form) {
+        if (deleteUserSubmitting) return false;
+        deleteUserSubmitting = true;
+
+        var btn = document.getElementById('deleteUserSubmit');
+        btn.disabled  = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        form.querySelector('.admin-modal-btn-cancel').disabled = true;
+        return true;
     }
 </script>
 @endsection

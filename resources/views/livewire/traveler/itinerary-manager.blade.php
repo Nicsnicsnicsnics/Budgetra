@@ -24,7 +24,7 @@
         {{-- Swaps in the "plan a trip" prompt below — on every tab, and for
              good, until the profile is actually created. See
              budgetraSkipProfileSetup() in layouts/app.blade.php. --}}
-        <button type="button" class="empty-state-skip" onclick="budgetraSkipProfileSetup()">Skip this step</button>
+        <button type="button" class="empty-state-skip" onclick="budgetraSkipProfileSetup()">Skip for now</button>
     </div>
     @endif
     <div class="empty-state-swap" @if ($imNeedsProfile) data-empty-when="skipped" @endif>
@@ -296,9 +296,12 @@
         .itin-view-btn{-webkit-appearance:none;appearance:none;border:none;outline:none;background:transparent;color:var(--muted);border-radius:8px;padding:7px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;transition:background .15s,color .15s,box-shadow .15s;}
         .itin-view-btn:hover{color:var(--primary);}
         .itin-view-btn-active,.itin-view-btn-active:hover{background:var(--bg-white);color:var(--primary);box-shadow:0 1px 4px rgba(0,0,0,.08);}
-        .itin-nav-btn{-webkit-appearance:none;appearance:none;border-radius:8px;border:1px solid #d3c3be;background:var(--bg-white);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text);font-family:inherit;transition:background .15s,border-color .15s;}
+        /* Borders come from the theme's own --border, as on the card these sit
+           in. They were pinned to #d3c3be, a warm beige that turned into a
+           bright ring around the buttons on the dark themes. */
+        .itin-nav-btn{-webkit-appearance:none;appearance:none;border-radius:8px;border:1px solid var(--border);background:var(--bg-white);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text);font-family:inherit;transition:background .15s,border-color .15s;}
         .itin-nav-btn:hover{background:var(--bg);border-color:var(--primary);color:var(--primary);}
-        .itin-nav-btn:disabled{opacity:.35;cursor:default;background:var(--bg-white);border-color:#d3c3be;color:var(--text);}
+        .itin-nav-btn:disabled{opacity:.35;cursor:default;background:var(--bg-white);border-color:var(--border);color:var(--text);}
         .itin-mini-day{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:11px;border-radius:7px;transition:background .15s;}
         .itin-mini-day-trip{color:var(--dark);font-weight:600;cursor:pointer;}
         .itin-mini-day-trip:hover{background:var(--primary-light);}
@@ -351,7 +354,10 @@
                     <div @click="selDate='{{ $dateStr }}'"
                          class="itin-mini-day {{ $isTrip ? 'itin-mini-day-trip' : '' }}"
                          :class="selDate==='{{ $dateStr }}' ? 'itin-mini-day-selected' : ''"
-                         style="{{ $isTrip ? '' : 'color:#c8c0bb;' }}">
+                         {{-- Days outside the trip are dimmed with the theme's
+                              own muted ink; a fixed light grey read brighter
+                              than the in-trip days on the dark themes. --}}
+                         style="{{ $isTrip ? '' : 'color:var(--muted);' }}">
                         {{ $d }}
                     </div>
                     @endfor
@@ -712,11 +718,16 @@ $titleIconMap = [
     .day-modal-row { transition: background .15s ease; }
     .day-modal-row:hover { background: var(--bg); }
     .day-modal-remove { transition: background .15s ease, color .15s ease; }
-    .day-modal-remove:hover { background: #FEE2E2; color: #DC2626 !important; }
+    /* Tinted from the theme's own danger colour rather than a fixed light
+       pink, which lit up as a bright patch on the dark themes. */
+    .day-modal-remove:hover { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger) !important; }
     .day-modal-close { transition: background .15s ease; }
     .day-modal-close:hover { background: var(--primary-dark) !important; }
 </style>
-<div class="day-modal-backdrop" style="position:fixed;inset:0;background:rgba(20,10,4,.45);backdrop-filter:blur(2px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;" wire:click.self="closeModals">
+{{-- Neutral scrim, matching every other modal in the app. This one used to be
+     rgba(20,10,4,.45) — a warm brown that read as a red cast over the dark
+     themes, where the blurred page behind it is already near-black. --}}
+<div class="day-modal-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(2px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;" wire:click.self="closeModals">
     <div class="day-modal-card" style="background:var(--bg-white);border-radius:20px;width:100%;max-width:440px;max-height:82vh;display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(45,27,20,0.22);overflow:hidden;">
 
         {{-- Header --}}

@@ -59,7 +59,7 @@
             {{-- Swaps in the "plan a trip" prompt below — on every tab, and for
                  good, until the profile is actually created. See
                  budgetraSkipProfileSetup() in layouts/app.blade.php. --}}
-            <button type="button" class="empty-state-skip" onclick="budgetraSkipProfileSetup()">Skip this step</button>
+            <button type="button" class="empty-state-skip" onclick="budgetraSkipProfileSetup()">Skip for now</button>
         </div>
         @endif
         <div class="empty-state-swap" @if ($stNeedsProfile) data-empty-when="skipped" @endif>

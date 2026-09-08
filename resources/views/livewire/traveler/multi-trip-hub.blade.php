@@ -17,7 +17,7 @@
             {{-- Swaps in the "plan a trip" prompt below — on every tab, and for
                  good, until the profile is actually created. See
                  budgetraSkipProfileSetup() in layouts/app.blade.php. --}}
-            <button type="button" class="empty-state-skip" onclick="budgetraSkipProfileSetup()">Skip this step</button>
+            <button type="button" class="empty-state-skip" onclick="budgetraSkipProfileSetup()">Skip for now</button>
         </div>
         @endif
         <div class="empty-state-swap" @if ($mthNeedsProfile) data-empty-when="skipped" @endif>
@@ -154,7 +154,10 @@
                             <span style="font-size:15px;font-weight:700;color:var(--dark);">{{ $cardPct }}%</span>
                         </div>
                         <div style="height:6px;background:var(--border-light);border-radius:99px;overflow:hidden;margin-bottom:18px;">
-                            <div style="height:100%;width:{{ $cardPct }}%;background:var(--primary);border-radius:99px;transition:width 0.3s;"></div>
+                            {{-- Width is clamped so the bar cannot overflow, but the
+                                 colour reads the raw ratio so an over-budget trip
+                                 still comes out red. --}}
+                            <div style="height:100%;width:{{ $cardPct }}%;background:{{ meter_color($trip->pct_used) }};border-radius:99px;transition:width 0.3s,background .3s;"></div>
                         </div>
                         <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:20px;">
                             <div>
@@ -248,7 +251,7 @@
                     <span style="font-size:12px;font-weight:700;">{{ $dt->pct_used }}% Expended</span>
                 </div>
                 <div style="height:6px;background:var(--border-light);border-radius:99px;overflow:hidden;margin-bottom:12px;">
-                    <div style="height:100%;width:{{ min(100,$dt->pct_used) }}%;background:var(--primary);border-radius:99px;"></div>
+                    <div style="height:100%;width:{{ min(100,$dt->pct_used) }}%;background:{{ meter_color($dt->pct_used) }};border-radius:99px;transition:background .3s;"></div>
                 </div>
                 <div style="display:flex;justify-content:space-between;">
                     <div>
@@ -306,6 +309,10 @@
                     $diff    = $budgetAmount - $t->total_spent;
                     $over    = $diff < 0;
                     $pctUsed = $budgetAmount > 0 ? min(100, round($t->total_spent / $budgetAmount * 100)) : 0;
+                    // Unclamped, for the colour only: $pctUsed caps at 100, which
+                    // would sit an over-budget trip at the top of the ramp instead
+                    // of past it.
+                    $pctRaw  = $budgetAmount > 0 ? round($t->total_spent / $budgetAmount * 100) : 0;
                     $verdict = $tie ? 'neutral' : ($entry['wins'] ? 'win' : 'lose');
                 @endphp
                 <div class="cmp-card cmp-card-{{ $verdict }}">
@@ -329,7 +336,7 @@
                         <span class="cmp-{{ $over ? 'over' : 'under' }}-text">{{ currency_symbol() }}{{ number_format($t->total_spent, 0) }}</span>
                     </div>
                     <div class="cmp-bar-track">
-                        <div class="cmp-bar-fill cmp-bar-{{ $over ? 'over' : 'under' }}" style="width:{{ $pctUsed }}%;"></div>
+                        <div class="cmp-bar-fill" style="width:{{ $pctUsed }}%;background:{{ meter_color($pctRaw) }};"></div>
                     </div>
                     <div class="cmp-pct-label">{{ $pctUsed }}% of budget used</div>
                 </div>
@@ -443,8 +450,9 @@
 
     .cmp-bar-track { flex: 1; min-width: 0; height: 7px; background: var(--bg); border: 1px solid var(--border); border-radius: 99px; overflow: hidden; box-sizing: border-box; }
     .cmp-bar-fill { height: 100%; border-radius: 99px; min-width: 3px; }
-    .cmp-bar-under { background: #4ADE80; }
-    .cmp-bar-over  { background: #FF4D6D; }
+    /* .cmp-bar-under/.cmp-bar-over replaced by meter_color(): the two-state
+       green/red became the three-step teal → amber → red ramp, and both were
+       hardcoded rather than themed. */
     .cmp-pct-label { color: var(--muted); font-size: 11px; margin-top: 6px; }
 
     .cmp-section-title { font-size: 15px; font-weight: 800; color: var(--dark); margin: 0 0 10px; }
