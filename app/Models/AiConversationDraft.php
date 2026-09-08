@@ -7,7 +7,7 @@ class AiConversationDraft extends Model
 {
     protected $fillable = [
         'user_id', 'messages',
-        'ai_from', 'ai_to', 'ai_budget_min', 'ai_budget_max',
+        'ai_from', 'ai_to', 'ai_budget_min', 'ai_budget_max', 'ai_budget_local',
         'ai_date_from', 'ai_date_to', 'ai_days', 'ai_travelers', 'ai_currency',
         'awaiting_slot', 'miss_count', 'ai_step', 'ai_package', 'ai_gen_count',
         'pending_profile_offer',

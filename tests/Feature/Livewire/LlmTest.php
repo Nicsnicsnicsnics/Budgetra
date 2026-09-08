@@ -8,6 +8,7 @@ use App\Models\Trip;
 use App\Models\User;
 use App\Models\UserProfile;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -1877,6 +1878,170 @@ class LlmTest extends TestCase
 
         $component->assertSet('aiTo', 'Japan');
         $component->assertSet('awaitingSlot', 'confirmation');
+    }
+
+    // ─── A foreign traveller's budget is in their own currency ───────────
+
+    // The wizard fixed this in 2026_08_27_130100 ("a Canadian typing 3,000 for
+    // CAD 3,000 got a ₱3,000 trip"); the conversational planner never did. A
+    // bare number was written straight into the peso column and only *labelled*
+    // with the traveller's currency.
+    public function test_a_bare_budget_is_read_in_the_travellers_own_currency(): void
+    {
+        Http::fake(['api.twelvedata.com/*' => Http::response(['symbol' => 'JPY/PHP', 'rate' => 0.3835], 200)]);
+        $user = User::factory()->create(['country' => 'Japan']);
+
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('awaitingSlot', 'budget')
+            ->set('aiPrompt', '50000')->call('automateTrip');
+
+        // 50,000 yen is ~P19,175 — not P50,000.
+        $component->assertSet('aiBudgetMax', 19175);
+        $component->assertSet('aiBudgetLocal', 50000.0);
+        $component->assertSet('aiCurrency', 'JPY');
+    }
+
+    public function test_a_filipino_bare_budget_is_untouched(): void
+    {
+        $this->fakeExtraction();
+        $user = User::factory()->create(['country' => 'Philippines']);
+
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('awaitingSlot', 'budget')
+            ->set('aiPrompt', '50000')->call('automateTrip');
+
+        $component->assertSet('aiBudgetMax', 50000);
+        $component->assertSet('aiCurrency', 'PHP');
+        // Nothing to convert, so nothing to record.
+        $component->assertSet('aiBudgetLocal', null);
+    }
+
+    // budget_limit is a peso column by definition, so an unconverted foreign
+    // figure there is not a neutral number — it is a wrong peso amount every
+    // later reader trusts. UserProfileSaver refuses on exactly this condition.
+    public function test_an_unconvertible_budget_is_refused_rather_than_stored(): void
+    {
+        Http::fake(['api.twelvedata.com/*' => Http::response([], 500)]);
+        Cache::flush();
+        $user = User::factory()->create(['country' => 'Japan']);
+
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('awaitingSlot', 'budget')
+            ->set('aiPrompt', '50000')->call('automateTrip');
+
+        $component->assertSet('aiBudgetMax', 0);
+        $component->assertSet('aiBudgetLocal', null);
+    }
+
+    // The whole point of keeping the original: the trip row records the pesos
+    // for the maths AND what the traveller actually typed, so reopening it
+    // never re-divides by whatever rate is live that day.
+    public function test_the_saved_trip_records_the_travellers_own_figure(): void
+    {
+        $this->fakeExtraction();
+        Http::fake([
+            'api.twelvedata.com/*' => Http::response(['symbol' => 'JPY/PHP', 'rate' => 0.3835], 200),
+            '*' => Http::response([], 200),
+        ]);
+        $user = User::factory()->create(['country' => 'Japan']);
+
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('aiFrom', 'Tokyo')->set('aiTo', 'Bangkok')
+            ->set('aiTravelers', 2)
+            ->set('aiDateFrom', '2026-08-03')->set('aiDateTo', '2026-08-10')->set('aiDays', 8)
+            ->set('awaitingSlot', 'budget')
+            // 150,000 yen ~ P57,525 — comfortably over the international floor
+            // for 8 days, so the shortfall check doesn't clear it first.
+            ->set('aiPrompt', '150000')->call('automateTrip');
+
+        $component->set('aiStep', 'results')->call('processAiTrip');
+
+        $trip = Trip::where('user_id', $user->id)->latest('id')->first();
+        $this->assertNotNull($trip, 'a draft trip was autosaved');
+        $this->assertSame('57525.00', (string) $trip->budget_limit);
+        $this->assertSame('JPY', $trip->budget_currency);
+        $this->assertSame('150000.00', (string) $trip->budget_local);
+    }
+
+    // "International" used to mean "the destination is not a Philippine
+    // airport", which is only the same question as "is this trip leaving the
+    // traveller's country" when the traveller is Filipino. A Canadian flying
+    // Toronto to Vancouver was charged an overseas minimum for a domestic hop.
+    public function test_a_domestic_trip_abroad_is_not_treated_as_international(): void
+    {
+        $user = User::factory()->create(['country' => 'Canada']);
+
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('aiFrom', 'Toronto')
+            ->set('aiTravelers', 1)
+            ->set('aiBudgetMin', 15000)
+            ->set('aiBudgetMax', 15000)
+            ->set('aiDateFrom', 'Aug 21')
+            ->set('aiDateTo', 'Aug 27, 2026')
+            ->set('aiDays', 7)
+            ->set('awaitingSlot', 'destination')
+            ->set('aiPrompt', 'vancouver')
+            ->call('automateTrip');
+
+        $component->assertSet('aiTo', 'Vancouver');
+        $component->assertSet('awaitingSlot', 'confirmation');
+        $this->assertStringNotContainsString(
+            'international',
+            collect($component->get('messages'))->last()['text']
+        );
+    }
+
+    // The same traveller genuinely leaving Canada must still be checked.
+    public function test_a_foreign_traveller_crossing_a_border_is_still_international(): void
+    {
+        $user = User::factory()->create(['country' => 'Canada']);
+
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('aiFrom', 'Toronto')
+            ->set('aiTravelers', 1)
+            ->set('aiBudgetMin', 15000)
+            ->set('aiBudgetMax', 15000)
+            ->set('aiDateFrom', 'Aug 21')
+            ->set('aiDateTo', 'Aug 27, 2026')
+            ->set('aiDays', 7)
+            ->set('awaitingSlot', 'destination')
+            ->set('aiPrompt', 'bangkok')
+            ->call('automateTrip');
+
+        $component->assertSet('aiTo', 'Bangkok');
+        $this->assertStringContainsString(
+            'international',
+            collect($component->get('messages'))->last()['text']
+        );
+    }
+
+    // The guard on the whole change: for a Filipino traveller the new question
+    // reduces to the old one, so both answers must be exactly as they were.
+    public function test_a_philippine_traveller_keeps_the_original_behaviour(): void
+    {
+        // A user per component: mount() rehydrates from that user's saved
+        // draft, so reusing one would carry the first destination into the
+        // second and quietly test the wrong thing.
+        $user  = User::factory()->create(['country' => 'Philippines']);
+        $other = User::factory()->create(['country' => 'Philippines']);
+
+        $abroad = Livewire::actingAs($user)->test(Llm::class)
+            ->set('aiFrom', 'Manila')->set('aiTravelers', 1)
+            ->set('aiBudgetMin', 15000)->set('aiBudgetMax', 15000)
+            ->set('aiDateFrom', 'Aug 21')->set('aiDateTo', 'Aug 27, 2026')->set('aiDays', 7)
+            ->set('awaitingSlot', 'destination')
+            ->set('aiPrompt', 'japan')->call('automateTrip');
+
+        $this->assertStringContainsString('international', collect($abroad->get('messages'))->last()['text']);
+
+        $home = Livewire::actingAs($other)->test(Llm::class)
+            ->set('aiFrom', 'Manila')->set('aiTravelers', 1)
+            ->set('aiBudgetMin', 15000)->set('aiBudgetMax', 15000)
+            ->set('aiDateFrom', 'Aug 21')->set('aiDateTo', 'Aug 27, 2026')->set('aiDays', 7)
+            ->set('awaitingSlot', 'destination')
+            ->set('aiPrompt', 'boracay')->call('automateTrip');
+
+        $home->assertSet('awaitingSlot', 'confirmation');
     }
 
     public function test_editing_destination_to_an_unaffordable_international_place_during_confirmation_is_blocked(): void

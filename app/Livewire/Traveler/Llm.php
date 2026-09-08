@@ -79,6 +79,12 @@ class Llm extends Component
 
     public bool $aiBudgetIsDaily = false;
 
+    // What the traveller actually typed, before conversion, when their currency
+    // isn't PHP. aiBudgetMin/Max are always pesos; this is the figure that goes
+    // into trips.budget_local so reopening a trip shows their own number back
+    // instead of a peso amount re-divided by whatever rate is live that day.
+    public ?float $aiBudgetLocal = null;
+
     public bool $showHistory       = false;
     public ?int $viewingHistoryId  = null;
     public ?int $historyEntryToDelete = null;
@@ -178,6 +184,7 @@ class Llm extends Component
         $this->aiTo          = $draft->ai_to;
         $this->aiBudgetMin   = $draft->ai_budget_min;
         $this->aiBudgetMax   = $draft->ai_budget_max;
+        $this->aiBudgetLocal = $draft->ai_budget_local !== null ? (float) $draft->ai_budget_local : null;
         $this->aiDateFrom    = $draft->ai_date_from;
         $this->aiDateTo      = $draft->ai_date_to;
         $this->aiDays        = $draft->ai_days;
@@ -932,6 +939,28 @@ class Llm extends Component
      * is down must not block someone from finishing their profile. The trip
      * planner still checks the converted figure later.
      */
+    /**
+     * The trip planner's peso floor, phrased in the currency the traveller is
+     * answering in — which for a profile is the HOME CITY's currency, not the
+     * registration country's, since that is what pfBudgetInPesos() converts
+     * from and what pfSummary() labels the figure with.
+     *
+     * Falls back to pesos when the city has no currency or no rate is live,
+     * which is the same thing displayAmount() does.
+     */
+    private function pfFloorInHomeCurrency(): string
+    {
+        $code = UserProfileSaver::currencyForHomeCity((string) ($this->profileDraft['home_city'] ?? ''));
+        $rate = $code !== null && $code !== 'PHP' ? $this->currencyRate($code) : null;
+
+        if ($rate === null || $rate <= 0) {
+            return '₱' . number_format(self::MINIMUM_TOTAL_BUDGET);
+        }
+
+        return (PlaceCatalog::CURRENCY_SYMBOLS[$code] ?? $code . ' ')
+            . number_format(self::MINIMUM_TOTAL_BUDGET / $rate);
+    }
+
     private function pfBudgetInPesos(float $amount): ?float
     {
         $code = UserProfileSaver::currencyForHomeCity((string) ($this->profileDraft['home_city'] ?? ''));
@@ -970,8 +999,8 @@ class Llm extends Component
                 ? "That doesn't look like a city name — which city do you usually set off from?"
                 : "That doesn't look like a city I know — I can work with places like {$cities}. Which one is closest to you?",
             'daily_budget' => $this->pfBudgetBelowFloor
-                ? 'That looks too low to plan a real trip — could you give me a more realistic number (at least ₱'
-                    . number_format(self::MINIMUM_TOTAL_BUDGET) . ')?'
+                ? 'That looks too low to plan a real trip — could you give me a more realistic number (at least '
+                    . $this->pfFloorInHomeCurrency() . ')?'
                 : "I need a number for that — roughly how much?",
             'travel_style' => "Just so I get it right — is that solo, or with a group?",
             'group_member_emails' => "I couldn't read an email address in there. Could you list them like name@example.com, separated by commas?",
@@ -1096,6 +1125,7 @@ class Llm extends Component
                 'ai_to'         => $this->aiTo,
                 'ai_budget_min' => $this->aiBudgetMin,
                 'ai_budget_max' => $this->aiBudgetMax,
+                'ai_budget_local' => $this->aiBudgetLocal,
                 'ai_date_from'  => $this->aiDateFrom,
                 'ai_date_to'    => $this->aiDateTo,
                 'ai_days'       => $this->aiDays,
@@ -1131,6 +1161,12 @@ class Llm extends Component
             'start_date'           => $this->aiDateFrom,
             'end_date'             => $endDate,
             'budget_limit'         => $this->aiBudgetMax ?: $this->aiBudgetMin,
+            // budget_limit is the peso figure everything reads; these two are
+            // what the traveller actually typed, so reopening the trip shows
+            // their own number rather than a peso amount re-divided by whatever
+            // rate is live that day. Null for a peso budget — nothing converted.
+            'budget_currency'      => $this->aiBudgetLocal !== null ? $this->aiCurrency : null,
+            'budget_local'         => $this->aiBudgetLocal,
             'destination_currency' => $conversion['code'] ?? null,
             'travel_type'          => 'Solo',
             'num_travelers'        => max(1, $this->aiTravelers),
@@ -1588,10 +1624,10 @@ class Llm extends Component
             $dayLabel = $this->aiDays > 0 ? "{$days}-day" : "typical {$days}-day";
 
             if ($perDay >= $floor) {
-                $reply = "Yes, ₱" . number_format($this->aiBudgetMax) . " should be enough for a {$dayLabel} trip to {$this->aiTo} — that's about ₱" . number_format($perDay) . "/day, which is a reasonable budget for flights, stay, food, and activities. Want me to put together a package?";
+                $reply = "Yes, " . $this->displayAmount($this->aiBudgetMax) . " should be enough for a {$dayLabel} trip to {$this->aiTo} — that's about " . $this->displayAmount($perDay) . "/day, which is a reasonable budget for flights, stay, food, and activities. Want me to put together a package?";
             } else {
                 $suggested = $floor * $days;
-                $reply = "That might be tight — ₱" . number_format($this->aiBudgetMax) . " works out to about ₱" . number_format($perDay) . "/day for a {$dayLabel} trip to {$this->aiTo}. Most trips need at least ₱" . number_format($floor) . "/day (around ₱" . number_format($suggested) . " total) to comfortably cover flights, stay, food, and activities. Want me to plan around that instead, or try to make ₱" . number_format($this->aiBudgetMax) . " work?";
+                $reply = "That might be tight — " . $this->displayAmount($this->aiBudgetMax) . " works out to about " . $this->displayAmount($perDay) . "/day for a {$dayLabel} trip to {$this->aiTo}. Most trips need at least " . $this->displayAmount($floor) . "/day (around " . $this->displayAmount($suggested) . " total) to comfortably cover flights, stay, food, and activities. Want me to plan around that instead, or try to make " . $this->displayAmount($this->aiBudgetMax) . " work?";
             }
 
             $this->aiPrompt = '';
@@ -1678,7 +1714,7 @@ class Llm extends Component
             $this->awaitingSlot = 'budget';
             $this->missCount    = 0;
             $this->messages[] = ['role' => 'assistant', 'text' =>
-                'That budget looks too low to plan a real trip — could you give me a more realistic number (at least ₱' . number_format(self::MINIMUM_TOTAL_BUDGET) . ')?'];
+                'That budget looks too low to plan a real trip — could you give me a more realistic number (at least ' . $this->displayAmount(self::MINIMUM_TOTAL_BUDGET) . ')?'];
             $this->dispatch('message-added');
             return;
         }
@@ -1719,6 +1755,7 @@ class Llm extends Component
         $this->aiTo            = '';
         $this->aiBudgetMin     = 0;
         $this->aiBudgetMax     = 0;
+        $this->aiBudgetLocal   = null;
         $this->aiDateFrom      = '';
         $this->aiDateTo        = '';
         $this->aiDays          = 0;
@@ -2005,14 +2042,13 @@ class Llm extends Component
             if (preg_match('/(' . $money . ')\s*(?:to|[-–])\s*(' . $money . ')/', $userText, $m)) {
                 $a = $this->parseMoneyToken($m[1]);
                 $b = $this->parseMoneyToken($m[2]);
-                $this->aiBudgetMin = min($a, $b);
-                $this->aiBudgetMax = max($a, $b);
+                $this->applyLocalBudget(min($a, $b), max($a, $b));
             } elseif (preg_match('/(\d+(?:,\d{3})*\s*[kK])(?:\b|(?=(?:' . $this->currencySuffixWords() . ')\b))/i', $userText, $m)) {
                 $v = $this->parseMoneyToken($m[1]);
-                if ($v > 0) $this->aiBudgetMin = $this->aiBudgetMax = $v;
+                if ($v > 0) $this->applyLocalBudget($v, $v);
             } elseif (preg_match('/(\d[\d,]*)/', $userText, $m)) {
                 $v = $this->parseMoneyToken($m[1]);
-                if ($v > 0) $this->aiBudgetMin = $this->aiBudgetMax = $v;
+                if ($v > 0) $this->applyLocalBudget($v, $v);
             }
         }
 
@@ -2118,13 +2154,15 @@ PROMPT;
                 if ($rate === null) {
                     $this->currencyNotice = "I couldn't fetch the live exchange rate just now — please try entering your budget again in a moment.";
                 } else {
-                    $this->aiBudgetMin = min(self::MAX_BUDGET, (int) round($min * $rate));
-                    $this->aiBudgetMax = min(self::MAX_BUDGET, (int) round($max * $rate));
-                    $this->aiCurrency  = $currencyCode;
+                    $this->aiBudgetMin   = min(self::MAX_BUDGET, (int) round($min * $rate));
+                    $this->aiBudgetMax   = min(self::MAX_BUDGET, (int) round($max * $rate));
+                    $this->aiCurrency    = $currencyCode;
+                    $this->aiBudgetLocal = $max;
                 }
             } else {
-                $this->aiBudgetMin = min(self::MAX_BUDGET, (int) $min);
-                $this->aiBudgetMax = min(self::MAX_BUDGET, (int) $max);
+                // The AI named no currency, so this is a bare figure and lands
+                // in the traveller's own money like any other.
+                $this->applyLocalBudget($min, $max);
             }
         }
 
@@ -2251,14 +2289,21 @@ PROMPT;
             if ($conversion === false) return false;
             if ($conversion !== null) {
                 $this->aiBudgetMin = $this->aiBudgetMax = min(self::MAX_BUDGET, $conversion['pesoAmount']);
+                // Named a currency outright ("$800", "800 CAD"), so the typed
+                // figure is worth keeping for the same reason as a bare one.
+                $this->aiBudgetLocal = $conversion['localAmount'];
                 return true;
             }
 
             $v = $this->parseMoneyToken($value);
             if ($v <= 0) return false;
-            $this->aiBudgetMin = $this->aiBudgetMax = $v;
-            $this->aiCurrency = home_currency();
-            return true;
+
+            $before = $this->aiBudgetMax;
+            $this->applyLocalBudget($v, $v);
+
+            // Unchanged means the rate was unavailable, so nothing was stored
+            // and the caller must treat this as an unanswered slot.
+            return $this->aiBudgetMax !== $before || $this->aiBudgetMax > 0;
         }
 
         if ($slot === 'travelers') {
@@ -2858,10 +2903,36 @@ PROMPT;
         'BXU', 'PAG', 'VRC', 'TUG', 'CYZ',
     ];
 
+    /**
+     * Whether this trip leaves the traveller's own country.
+     *
+     * The question used to be "is the destination a Philippine airport?",
+     * which only matches the one above while the traveller is Filipino. For
+     * anyone else it was wrong in the expensive direction: a Canadian flying
+     * Toronto to Vancouver was charged the overseas minimum for a domestic
+     * hop, because YVR simply isn't on the Philippine list.
+     *
+     * For a Philippine origin the comparison reduces to the old test — the
+     * destination is foreign exactly when it isn't Philippine — so nothing
+     * changes for them.
+     */
     private function isInternationalDestination(string $cityName): bool
     {
-        $code = $this->iataCode($cityName);
-        return $code !== '' && !in_array($code, self::PHILIPPINE_IATA_CODES, true);
+        $destination = PlaceCatalog::countryFor($cityName);
+
+        // A place we can't put in a country keeps the old airport-code
+        // answer rather than being guessed at.
+        if ($destination === null) {
+            $code = $this->iataCode($cityName);
+            return $code !== '' && !in_array($code, self::PHILIPPINE_IATA_CODES, true);
+        }
+
+        // No origin given yet: fall back to where they registered, which
+        // originCountryFor() already resolves to the Philippines when unknown.
+        $origin = PlaceCatalog::countryFor($this->aiFrom)
+            ?? PlaceCatalog::originCountryFor(auth()->user()?->country);
+
+        return strcasecmp($destination, $origin) !== 0;
     }
 
     private function knownPlaceName(string $text, ?string $slotContext = null): string
@@ -2939,7 +3010,7 @@ PROMPT;
             $this->missCount        = 0;
             $this->aiPrompt         = '';
             $this->messages[]       = ['role' => 'assistant', 'text' =>
-                'That budget looks too low to plan a real trip — could you give me a more realistic number (at least ₱' . number_format(self::MINIMUM_TOTAL_BUDGET) . ')?'];
+                'That budget looks too low to plan a real trip — could you give me a more realistic number (at least ' . $this->displayAmount(self::MINIMUM_TOTAL_BUDGET) . ')?'];
             $this->dispatch('message-added');
             return true;
         }
@@ -3099,6 +3170,46 @@ PROMPT;
         return (new CurrencyConverterService())->rateToPhp($code);
     }
 
+    /**
+     * Records a budget the traveller typed WITHOUT naming a currency.
+     *
+     * A bare number is in their own money, not pesos. The wizard fixed this in
+     * 2026_08_27_130100 — a Canadian typing 3,000 for CAD 3,000 got a ₱3,000
+     * trip — but every path into this component still took the figure at face
+     * value. Everything downstream (the budget floors, capPackageToBudget,
+     * expenses, the dashboards, admin reports) is peso-denominated, so the
+     * conversion belongs here rather than in each of them.
+     *
+     * Leaves the budget untouched when the rate is unavailable, so the slot
+     * stays empty and gets asked again — the same refusal UserProfileSaver
+     * makes. budget_limit is a peso column by definition, so an unconverted
+     * foreign figure there is not a neutral number, it is a wrong peso amount
+     * every later reader trusts.
+     */
+    private function applyLocalBudget(float $min, float $max): void
+    {
+        $code = home_currency();
+
+        if ($code === 'PHP') {
+            // Reset the currency too: a bare number after "$500" means they
+            // have gone back to their own money, and leaving USD set would
+            // re-render the new figure through a rate it was never in.
+            $this->aiCurrency    = $code;
+            $this->aiBudgetLocal = null;
+            $this->aiBudgetMin   = (int) min(self::MAX_BUDGET, $min);
+            $this->aiBudgetMax   = (int) min(self::MAX_BUDGET, $max);
+            return;
+        }
+
+        $rate = $this->currencyRate($code);
+        if ($rate === null) return;
+
+        $this->aiCurrency    = $code;
+        $this->aiBudgetLocal = $max;
+        $this->aiBudgetMin   = (int) min(self::MAX_BUDGET, round($min * $rate));
+        $this->aiBudgetMax   = (int) min(self::MAX_BUDGET, round($max * $rate));
+    }
+
     private function detectAndConvertCurrency(string $text): array|false|null
     {
         $symbolOrCode = '(?:\$|＄|€|£|￡|¥|￥|₩|￦|₱|₹|₫|₦|USD|EUR|GBP|JPY|SGD|AUD|KRW|HKD|THB|MYR|AED|PHP|pesos?'
@@ -3135,6 +3246,7 @@ PROMPT;
             'code'         => $code,
             'currencyName' => $currency['name'],
             'pesoAmount'   => (int) round($foreignAmount * $rate),
+            'localAmount'  => $foreignAmount,
             'displayLabel' => $currency['symbol'] . number_format($foreignAmount),
         ];
     }
@@ -3515,18 +3627,21 @@ PROMPT;
             || preg_match('/[₱P]?\s*(' . $big . ')\D{0,15}?\bdaily\b/ui', $withoutDate, $m)
             || preg_match('/[₱P]?\s*(' . $big . ')\s*(?:per\s*day|\/\s*day|a\s*day)\b/ui', $withoutDate, $m)
         ) {
-            $this->aiBudgetMin = $this->aiBudgetMax = $this->parseMoneyToken($m[1]);
+            $v = $this->parseMoneyToken($m[1]);
+            $this->applyLocalBudget($v, $v);
             $this->aiBudgetIsDaily = true;
 
         } elseif (preg_match('/[₱P]?\s*(' . $big . ')\s*(?:[-–]|to)\s*[₱P]?\s*(' . $big . ')/ui', $withoutDate, $m)) {
             $a = $this->parseMoneyToken($m[1]);
             $b = $this->parseMoneyToken($m[2]);
-            $this->aiBudgetMin = min($a,$b);
-            $this->aiBudgetMax = max($a,$b);
+            $this->applyLocalBudget(min($a, $b), max($a, $b));
 
         } elseif (preg_match('/budget\s*(?:is|of|:)?\s*[₱P]?\s*(' . $big . ')/ui', $withoutDate, $m)) {
-            $this->aiBudgetMin = $this->aiBudgetMax = $this->parseMoneyToken($m[1]);
+            $v = $this->parseMoneyToken($m[1]);
+            $this->applyLocalBudget($v, $v);
 
+        // The next two name pesos outright ("₱5,000", "5000 pesos"), so they
+        // are already in the storage currency and must not be converted again.
         } elseif (preg_match('/[₱]\s*(' . $big . ')/u', $withoutDate, $m)) {
             $this->aiBudgetMin = $this->aiBudgetMax = $this->parseMoneyToken($m[1]);
 
@@ -3535,7 +3650,8 @@ PROMPT;
 
         } elseif ((($this->aiBudgetMin === 0 && $this->aiBudgetMax === 0) || $this->looksLikeCorrection($withoutDate))
             && preg_match('/\b(' . $big . ')\b/', $withoutDate, $m)) {
-            $this->aiBudgetMin = $this->aiBudgetMax = $this->parseMoneyToken($m[1]);
+            $v = $this->parseMoneyToken($m[1]);
+            $this->applyLocalBudget($v, $v);
 
         }
 
