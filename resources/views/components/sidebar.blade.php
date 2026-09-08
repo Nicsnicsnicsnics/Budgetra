@@ -41,8 +41,9 @@
      @persist'ed, so wire:navigate never re-renders it. Profile used to point
      at /profile/setup for a traveler with no profile yet, and stayed pointing
      there for the rest of the session even after they finished the builder.
-     /profile already shows a "Set Up Preferences" prompt when there is no
-     profile, so the link needs no condition to go stale in the first place. --}}
+     The link is unconditional for that reason; sending a traveler with no
+     profile to the builder is ProfileController::edit()'s job, decided fresh
+     on each request so it cannot go stale here. --}}
 @persist('sidebar')
 <aside class="sidebar" id="appSidebar">
 

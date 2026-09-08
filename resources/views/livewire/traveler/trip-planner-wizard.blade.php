@@ -3737,7 +3737,7 @@ window.sortAttractions = function(dir) {
         {{-- Manual Planning --}}
         <div wire:click="selectPlanningMode('manual')" class="mode-card">
             <div class="mode-img-wrap">
-                <img src="{{ asset('stockimages/manualplanning.jpg') }}?v={{ filemtime(public_path('stockimages/manualplanning.jpg')) }}" alt="Manual Planning">
+                <img src="{{ asset('stockimages/manualtrip.jpg') }}?v={{ filemtime(public_path('stockimages/manualtrip.jpg')) }}" alt="Manual Planning">
                 <div class="mode-img-fade"></div>
                 <div class="mode-tags">
                     <span class="mode-tag"><i class="fa-solid fa-plane" style="font-size:9px;margin-right:4px;"></i>Transportation</span>
@@ -3761,7 +3761,7 @@ window.sortAttractions = function(dir) {
         {{-- AI Planning --}}
         <a href="{{ route('trips.plan.ai') }}" wire:navigate class="mode-card">
             <div class="mode-img-wrap">
-                <img src="{{ asset('stockimages/aipoweredplanning.jpg') }}?v={{ filemtime(public_path('stockimages/aipoweredplanning.jpg')) }}" alt="AI Planning">
+                <img src="{{ asset('stockimages/aipowered.png') }}?v={{ filemtime(public_path('stockimages/aipowered.png')) }}" alt="AI Planning">
                 <div class="mode-img-fade"></div>
                 <div class="mode-tags">
                     <span class="mode-tag"><i class="fa-solid fa-bolt" style="font-size:9px;margin-right:4px;"></i>Instant Itinerary</span>

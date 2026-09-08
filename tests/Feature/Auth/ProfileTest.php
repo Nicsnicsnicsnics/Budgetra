@@ -15,6 +15,9 @@ class ProfileTest extends TestCase
     public function test_profile_page_loads_for_authenticated_user(): void
     {
         $user = User::factory()->create(['full_name' => 'Kent Pielago']);
+        // Needs a profile to render at all: without one, edit() redirects to
+        // the builder. See SidebarProfileLinkTest.
+        UserProfile::create(['user_id' => $user->id, 'home_city' => 'Manila']);
         $response = $this->actingAs($user)->get('/profile');
         $response->assertStatus(200);
         $response->assertSee('Kent Pielago');
