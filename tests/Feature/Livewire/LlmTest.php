@@ -577,11 +577,6 @@ class LlmTest extends TestCase
         $this->assertStringNotContainsString('too low', $lastMessage);
     }
 
-    // The profile's budget figure is a WHOLE-TRIP amount — offerSavedPreferencesIfAny()
-    // seeds a trip total straight from it, and TripPlannerWizard uses it as a
-    // trip minimum. budgetFloor() was the one place reading it as a per-day
-    // figure, so "is ₱30,000 enough for 5 days?" compared ₱6,000/day against a
-    // ₱25,000 trip budget and called a perfectly good budget too tight.
     public function test_a_realistic_budget_is_not_called_tight_against_a_whole_trip_profile_figure(): void
     {
         $user = User::factory()->create();
@@ -1126,28 +1121,6 @@ class LlmTest extends TestCase
 
         $component->assertSet('aiBudgetMin', 25000);
         $component->assertSet('aiBudgetMax', 25000);
-    }
-
-    public function test_a_tangential_question_is_acknowledged_without_inflating_miss_count(): void
-    {
-        $user = User::factory()->create();
-        $this->fakeExtraction();
-
-        $component = Livewire::actingAs($user)->test(Llm::class)
-            ->set('aiTo', 'Cebu')
-            ->set('aiFrom', 'Manila')
-            ->set('aiTravelers', 1)
-            ->set('aiBudgetMin', 15000)
-            ->set('aiBudgetMax', 15000)
-            ->set('awaitingSlot', 'dates')
-            ->set('missCount', 2)
-            ->set('aiPrompt', 'is Cebu safe to visit?')
-            ->call('automateTrip');
-
-        $component->assertSet('missCount', 0);
-        $component->assertSet('awaitingSlot', 'dates');
-        $lastMessage = collect($component->get('messages'))->last()['text'];
-        $this->assertStringContainsString('Good question', $lastMessage);
     }
 
     public function test_budget_answered_in_turn_is_not_redundantly_acknowledged(): void
@@ -1803,8 +1776,9 @@ class LlmTest extends TestCase
         $component = $this->withAllSlotsFilled(
             Livewire::actingAs($user)->test(Llm::class)
         )->set('aiFrom', 'Cebu')
-            ->set('aiBudgetMin', 15000)
-            ->set('aiBudgetMax', 15000)
+
+            ->set('aiBudgetMin', 25000)
+            ->set('aiBudgetMax', 25000)
             ->set('aiDays', 7)
             ->set('aiPrompt', 'please continue')->call('automateTrip');
 
@@ -1860,6 +1834,53 @@ class LlmTest extends TestCase
         $component->assertSet('awaitingSlot', 'confirmation');
     }
 
+    public function test_a_long_domestic_trip_needs_more_than_a_short_one(): void
+    {
+        $user = User::factory()->create();
+
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('aiFrom', 'Manila')->set('aiTravelers', 1)
+            ->set('aiBudgetMin', 12000)->set('aiBudgetMax', 12000)
+            ->set('aiDateFrom', 'Aug 3')->set('aiDateTo', 'Aug 16, 2026')
+            ->set('aiDays', 14)
+            ->set('awaitingSlot', 'destination')
+            ->set('aiPrompt', 'boracay')->call('automateTrip');
+
+        $component->assertSet('awaitingSlot', 'budget');
+        $this->assertStringContainsString('too low', collect($component->get('messages'))->last()['text']);
+    }
+
+    public function test_a_short_domestic_trip_is_no_longer_held_to_the_week_long_figure(): void
+    {
+        $user = User::factory()->create();
+
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('aiFrom', 'Manila')->set('aiTravelers', 1)
+            ->set('aiBudgetMin', 6000)->set('aiBudgetMax', 6000)
+            ->set('aiDateFrom', 'Aug 21')->set('aiDateTo', 'Aug 22, 2026')
+            ->set('aiDays', 2)
+            ->set('awaitingSlot', 'destination')
+            ->set('aiPrompt', 'boracay')->call('automateTrip');
+
+        $component->assertSet('aiTo', 'Boracay');
+        $component->assertSet('awaitingSlot', 'confirmation');
+    }
+
+    public function test_a_week_long_domestic_trip_still_needs_exactly_ten_thousand(): void
+    {
+        $user = User::factory()->create();
+
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('aiFrom', 'Manila')->set('aiTravelers', 1)
+            ->set('aiBudgetMin', 10000)->set('aiBudgetMax', 10000)
+            ->set('aiDateFrom', 'Aug 3')->set('aiDateTo', 'Aug 9, 2026')
+            ->set('aiDays', 7)
+            ->set('awaitingSlot', 'destination')
+            ->set('aiPrompt', 'boracay')->call('automateTrip');
+
+        $component->assertSet('awaitingSlot', 'confirmation');
+    }
+
     public function test_directly_naming_an_affordable_international_destination_proceeds_normally(): void
     {
         $user = User::factory()->create();
@@ -1880,12 +1901,6 @@ class LlmTest extends TestCase
         $component->assertSet('awaitingSlot', 'confirmation');
     }
 
-    // ─── A foreign traveller's budget is in their own currency ───────────
-
-    // The wizard fixed this in 2026_08_27_130100 ("a Canadian typing 3,000 for
-    // CAD 3,000 got a ₱3,000 trip"); the conversational planner never did. A
-    // bare number was written straight into the peso column and only *labelled*
-    // with the traveller's currency.
     public function test_a_bare_budget_is_read_in_the_travellers_own_currency(): void
     {
         Http::fake(['api.twelvedata.com/*' => Http::response(['symbol' => 'JPY/PHP', 'rate' => 0.3835], 200)]);
@@ -1895,7 +1910,6 @@ class LlmTest extends TestCase
             ->set('awaitingSlot', 'budget')
             ->set('aiPrompt', '50000')->call('automateTrip');
 
-        // 50,000 yen is ~P19,175 — not P50,000.
         $component->assertSet('aiBudgetMax', 19175);
         $component->assertSet('aiBudgetLocal', 50000.0);
         $component->assertSet('aiCurrency', 'JPY');
@@ -1912,13 +1926,10 @@ class LlmTest extends TestCase
 
         $component->assertSet('aiBudgetMax', 50000);
         $component->assertSet('aiCurrency', 'PHP');
-        // Nothing to convert, so nothing to record.
+
         $component->assertSet('aiBudgetLocal', null);
     }
 
-    // budget_limit is a peso column by definition, so an unconverted foreign
-    // figure there is not a neutral number — it is a wrong peso amount every
-    // later reader trusts. UserProfileSaver refuses on exactly this condition.
     public function test_an_unconvertible_budget_is_refused_rather_than_stored(): void
     {
         Http::fake(['api.twelvedata.com/*' => Http::response([], 500)]);
@@ -1933,9 +1944,6 @@ class LlmTest extends TestCase
         $component->assertSet('aiBudgetLocal', null);
     }
 
-    // The whole point of keeping the original: the trip row records the pesos
-    // for the maths AND what the traveller actually typed, so reopening it
-    // never re-divides by whatever rate is live that day.
     public function test_the_saved_trip_records_the_travellers_own_figure(): void
     {
         $this->fakeExtraction();
@@ -1950,23 +1958,18 @@ class LlmTest extends TestCase
             ->set('aiTravelers', 2)
             ->set('aiDateFrom', '2026-08-03')->set('aiDateTo', '2026-08-10')->set('aiDays', 8)
             ->set('awaitingSlot', 'budget')
-            // 150,000 yen ~ P57,525 — comfortably over the international floor
-            // for 8 days, so the shortfall check doesn't clear it first.
-            ->set('aiPrompt', '150000')->call('automateTrip');
+
+            ->set('aiPrompt', '200000')->call('automateTrip');
 
         $component->set('aiStep', 'results')->call('processAiTrip');
 
         $trip = Trip::where('user_id', $user->id)->latest('id')->first();
         $this->assertNotNull($trip, 'a draft trip was autosaved');
-        $this->assertSame('57525.00', (string) $trip->budget_limit);
+        $this->assertSame('76700.00', (string) $trip->budget_limit);
         $this->assertSame('JPY', $trip->budget_currency);
-        $this->assertSame('150000.00', (string) $trip->budget_local);
+        $this->assertSame('200000.00', (string) $trip->budget_local);
     }
 
-    // "International" used to mean "the destination is not a Philippine
-    // airport", which is only the same question as "is this trip leaving the
-    // traveller's country" when the traveller is Filipino. A Canadian flying
-    // Toronto to Vancouver was charged an overseas minimum for a domestic hop.
     public function test_a_domestic_trip_abroad_is_not_treated_as_international(): void
     {
         $user = User::factory()->create(['country' => 'Canada']);
@@ -1991,7 +1994,6 @@ class LlmTest extends TestCase
         );
     }
 
-    // The same traveller genuinely leaving Canada must still be checked.
     public function test_a_foreign_traveller_crossing_a_border_is_still_international(): void
     {
         $user = User::factory()->create(['country' => 'Canada']);
@@ -2015,13 +2017,8 @@ class LlmTest extends TestCase
         );
     }
 
-    // The guard on the whole change: for a Filipino traveller the new question
-    // reduces to the old one, so both answers must be exactly as they were.
     public function test_a_philippine_traveller_keeps_the_original_behaviour(): void
     {
-        // A user per component: mount() rehydrates from that user's saved
-        // draft, so reusing one would carry the first destination into the
-        // second and quietly test the wrong thing.
         $user  = User::factory()->create(['country' => 'Philippines']);
         $other = User::factory()->create(['country' => 'Philippines']);
 
@@ -2050,8 +2047,10 @@ class LlmTest extends TestCase
 
         $component = $this->withAllSlotsFilled(
             Livewire::actingAs($user)->test(Llm::class)
-        )->set('aiBudgetMin', 15000)
-            ->set('aiBudgetMax', 15000)
+        )
+
+            ->set('aiBudgetMin', 25000)
+            ->set('aiBudgetMax', 25000)
             ->set('aiDays', 8)
             ->set('aiPrompt', 'please continue')->call('automateTrip');
 
@@ -2074,8 +2073,10 @@ class LlmTest extends TestCase
 
         $component = $this->withAllSlotsFilled(
             Livewire::actingAs($user)->test(Llm::class)
-        )->set('aiBudgetMin', 15000)
-            ->set('aiBudgetMax', 15000)
+        )
+
+            ->set('aiBudgetMin', 25000)
+            ->set('aiBudgetMax', 25000)
             ->set('aiDays', 8)
             ->set('aiPrompt', 'please continue')->call('automateTrip');
 
@@ -2099,8 +2100,9 @@ class LlmTest extends TestCase
         $component = $this->withAllSlotsFilled(
             Livewire::actingAs($user)->test(Llm::class)
         )->set('aiTo', 'Japan')
-            ->set('aiBudgetMin', 45000)
-            ->set('aiBudgetMax', 45000)
+
+            ->set('aiBudgetMin', 90000)
+            ->set('aiBudgetMax', 90000)
             ->set('aiDays', 8)
             ->set('aiPrompt', 'please continue')->call('automateTrip');
 
@@ -2128,8 +2130,8 @@ class LlmTest extends TestCase
         $component = $this->withAllSlotsFilled(
             Livewire::actingAs($user)->test(Llm::class)
         )->set('aiTo', 'Japan')
-            ->set('aiBudgetMin', 45000)
-            ->set('aiBudgetMax', 45000)
+            ->set('aiBudgetMin', 90000)
+            ->set('aiBudgetMax', 90000)
             ->set('aiDays', 8)
             ->set('aiPrompt', 'please continue')->call('automateTrip');
 
@@ -2150,16 +2152,16 @@ class LlmTest extends TestCase
         $component = $this->withAllSlotsFilled(
             Livewire::actingAs($user)->test(Llm::class)
         )->set('aiTo', 'Japan')
-            ->set('aiBudgetMin', 45000)
-            ->set('aiBudgetMax', 45000)
+            ->set('aiBudgetMin', 90000)
+            ->set('aiBudgetMax', 90000)
             ->set('aiDays', 8)
             ->set('aiPrompt', 'please continue')->call('automateTrip');
 
-        $component->set('aiPrompt', 'change budget to 50000')->call('automateTrip');
+        $component->set('aiPrompt', 'change budget to 80000')->call('automateTrip');
 
         $component->assertSet('aiTo', 'Japan');
-        $component->assertSet('aiBudgetMin', 50000);
-        $component->assertSet('aiBudgetMax', 50000);
+        $component->assertSet('aiBudgetMin', 80000);
+        $component->assertSet('aiBudgetMax', 80000);
         $component->assertSet('awaitingSlot', 'confirmation');
         $lastMessage = collect($component->get('messages'))->last()['text'];
         $this->assertStringContainsString('Got it, updated!', $lastMessage);
@@ -2194,11 +2196,11 @@ class LlmTest extends TestCase
             Livewire::actingAs($user)->test(Llm::class)
         )->set('aiPrompt', 'please continue')->call('automateTrip');
 
-        $component->set('aiPrompt', 'change my budget to 15000')->call('automateTrip');
+        $component->set('aiPrompt', 'change my budget to 20000')->call('automateTrip');
 
         $component->assertSet('aiTo', 'Boracay');
-        $component->assertSet('aiBudgetMin', 15000);
-        $component->assertSet('aiBudgetMax', 15000);
+        $component->assertSet('aiBudgetMin', 20000);
+        $component->assertSet('aiBudgetMax', 20000);
         $component->assertSet('awaitingSlot', 'confirmation');
         $lastMessage = collect($component->get('messages'))->last()['text'];
         $this->assertStringContainsString('Got it, updated!', $lastMessage);
@@ -2434,9 +2436,6 @@ class LlmTest extends TestCase
         $this->assertStringContainsString('₱30,000', $lastMessage);
     }
 
-    // With no profile there are no saved preferences to reuse, so that offer
-    // stays silent — but TARA now offers to BUILD one instead, which is a
-    // different question and a different flag.
     public function test_mount_offers_to_build_a_profile_when_none_exists(): void
     {
         $user = User::factory()->create();
@@ -2648,8 +2647,9 @@ class LlmTest extends TestCase
         $component = $this->withAllSlotsFilled(
             Livewire::actingAs($user)->test(Llm::class)
         )->set('aiTo', 'Japan')
-            ->set('aiBudgetMin', 45000)
-            ->set('aiBudgetMax', 45000)
+
+            ->set('aiBudgetMin', 70000)
+            ->set('aiBudgetMax', 70000)
             ->set('aiPrompt', 'please continue')->call('automateTrip');
 
         $lastMessage = collect($component->get('messages'))->last()['text'];

@@ -15,21 +15,11 @@ class ExpenseController extends Controller
 {
     private const CATEGORIES = ['Transportation','Accommodation','Food','Activities','Shopping','Emergency Expenses'];
 
-    /** Currencies an expense may be recorded in — anything we can render. */
     private static function currencyCodes(): array
     {
         return array_keys(PlaceCatalog::CURRENCY_SYMBOLS);
     }
 
-    /**
-     * Turns whatever the traveller typed into the peso figure the rest of the app
-     * measures against, keeping the original alongside it.
-     *
-     * `amount` on the way in is what they typed, in `amount_currency`. On the way
-     * out `amount` is pesos, and `amount_original`/`amount_currency` record what
-     * was actually spent — so an edit re-converts from the original rather than
-     * converting an already-converted number a second time.
-     */
     private function resolveAmountInPesos(array $validated): array
     {
         $code  = strtoupper((string) ($validated['amount_currency'] ?? 'PHP')) ?: 'PHP';
@@ -37,7 +27,8 @@ class ExpenseController extends Controller
 
         if ($code === 'PHP') {
             $validated['amount_currency'] = 'PHP';
-            $validated['amount_original'] = null;   // nothing was converted
+            $validated['amount_original'] = null;
+
             return $validated;
         }
 
@@ -53,10 +44,6 @@ class ExpenseController extends Controller
         return $validated;
     }
 
-    /**
-     * What a trip's expenses should default to being typed in: the destination's
-     * own currency, because that's what the traveller is handing over at the till.
-     */
     public static function defaultCurrencyForTrip(?Trip $trip): string
     {
         return $trip?->destination_currency ?: 'PHP';
@@ -65,37 +52,21 @@ class ExpenseController extends Controller
     public function index(Request $request)
     {
         $user  = auth()->user();
-        // accessibleTrips(): a group member logs their own spending against
-        // the shared trip, so it has to appear in this selector.
+
         $trips = $user->accessibleTrips()->latest()->get()
             ->filter(fn ($t) => in_array($t->resolved_status, ['active', 'upcoming', 'past'], true))
             ->values();
 
-        // Scoped by trip, not by who logged it. On a group trip everyone needs
-        // to see the whole group's spending — the trip's own totals (and the
-        // per-person split) already count every member's expenses, so listing
-        // only your own here contradicted the numbers shown beside it.
-        // Restricted to trips the traveller may open, so a stray ?trip_id
-        // can't expose someone else's expenses.
         $accessibleIds = $user->accessibleTrips()->pluck('id');
         $query = Expense::with(['trip', 'user:id,full_name'])
             ->whereIn('trip_id', $accessibleIds)
             ->latest('expense_date');
 
-        // The page is built around viewing one trip's expenses at a time
-        // (destination selector, single-trip "Add Expense" link) — default
-        // to the first trip whenever none is specified, not just when
-        // there's exactly one. Matches the same default the view already
-        // assumes for which destination looks "selected".
         $tripId = $request->filled('trip_id') ? $request->trip_id : $trips->first()?->id;
 
         if ($tripId)                       $query->where('trip_id', $tripId);
         if ($request->filled('category'))  $query->where('category', $request->category);
-        // strtotime() guards against a malformed date reaching the query —
-        // on Postgres (the real database), comparing a date column against
-        // a string that isn't a valid date throws a QueryException instead
-        // of just matching nothing, crashing the whole page over what
-        // should just be an ignorable bad filter value.
+
         if ($request->filled('date_from') && strtotime($request->date_from) !== false) {
             $query->where('expense_date', '>=', $request->date_from);
         }
@@ -116,9 +87,6 @@ class ExpenseController extends Controller
             ->values();
         $categories = self::CATEGORIES;
 
-        // Default to the currency of whichever trip is preselected — on a Japan
-        // trip the traveller is handing over yen, so that's what the form should
-        // be ready to accept.
         $preselected = $request->filled('trip_id')
             ? $trips->firstWhere('id', (int) $request->input('trip_id'))
             : $trips->first();
@@ -128,13 +96,6 @@ class ExpenseController extends Controller
         return view('traveler.expenses.create', compact('trips', 'categories', 'defaultCurrency'));
     }
 
-    /**
-     * The amount field groups thousands as you type ("1,234.50"), so what
-     * arrives can carry separators. The browser strips them on submit, but a
-     * form posted without JS does not — and "1,234.50" fails `numeric`, which
-     * would read to the traveller as "enter a valid amount" for an amount they
-     * did enter correctly.
-     */
     private function normaliseAmount(Request $request): void
     {
         $amount = $request->input('amount');
@@ -162,9 +123,6 @@ class ExpenseController extends Controller
             403
         );
 
-        // A traveller in Japan types what the receipt says — ¥3,500 — and this
-        // turns it into the peso figure budgets are measured against, keeping
-        // the yen original alongside. Refuses rather than guessing a rate.
         try {
             $validated = $this->resolveAmountInPesos($validated);
         } catch (CurrencyUnavailable $e) {
@@ -178,11 +136,6 @@ class ExpenseController extends Controller
 
         $validated['user_id'] = auth()->id();
 
-        // The file above is already on disk by this point — if creating the
-        // actual expense record fails for any reason, that file would
-        // otherwise orphan with nothing left to ever reference or clean it
-        // up, the same leak just fixed in the OCR scan step. Clean it up
-        // before letting the failure propagate normally.
         try {
             $expense = Expense::create($validated);
         } catch (\Throwable $e) {
@@ -199,9 +152,6 @@ class ExpenseController extends Controller
 
     public function edit(Expense $expense)
     {
-        // Anyone on the trip may edit its expenses, not just whoever logged
-        // them — a shared trip's ledger is shared. The row still shows who
-        // recorded it, so attribution isn't lost.
         abort_if(!auth()->user()->canAccessTrip((int) $expense->trip_id), 403);
         $trips      = auth()->user()->accessibleTrips()->latest()->get();
         $categories = self::CATEGORIES;
@@ -210,7 +160,6 @@ class ExpenseController extends Controller
 
     public function update(Request $request, Expense $expense)
     {
-        // Trip membership, not authorship — see edit().
         abort_if(!auth()->user()->canAccessTrip((int) $expense->trip_id), 403);
 
         $this->normaliseAmount($request);
@@ -225,17 +174,11 @@ class ExpenseController extends Controller
             'receipt'         => 'nullable|image|mimes:jpeg,png,jpg,webp|max:10240',
         ]);
 
-        // exists:trips,id above only checks the trip is real, not that it's
-        // this traveler's — same check store() already applies, needed here
-        // too since trip_id can be changed on edit, not just set once.
         abort_if(
             !auth()->user()->canAccessTrip((int) $validated['trip_id']),
             403
         );
 
-        // The edit form shows the ORIGINAL amount (¥3,500), not the peso figure,
-        // so what comes back is re-converted from scratch. Converting the peso
-        // value again is the double-conversion bug this shape exists to prevent.
         try {
             $validated = $this->resolveAmountInPesos($validated);
         } catch (CurrencyUnavailable $e) {
@@ -246,10 +189,6 @@ class ExpenseController extends Controller
         $replacingReceipt = $request->hasFile('receipt');
 
         if ($replacingReceipt) {
-            // Store the new file first, but don't delete the old one yet —
-            // if update() below fails, the old file needs to stay intact
-            // (nothing changed), and only the just-stored NEW file should
-            // be cleaned up, not both.
             $validated['receipt_path'] = $request->file('receipt')->store('receipts', 'public');
         }
         unset($validated['receipt']);
@@ -263,7 +202,6 @@ class ExpenseController extends Controller
             throw $e;
         }
 
-        // Only remove the old receipt once the swap has actually succeeded.
         if ($replacingReceipt && $oldReceiptPath) {
             Storage::disk('public')->delete($oldReceiptPath);
         }
@@ -273,7 +211,6 @@ class ExpenseController extends Controller
 
     public function destroy(Expense $expense)
     {
-        // Trip membership, not authorship — see edit().
         abort_if(!auth()->user()->canAccessTrip((int) $expense->trip_id), 403);
 
         if ($expense->receipt_path) {
@@ -291,9 +228,6 @@ class ExpenseController extends Controller
             'trip_id' => 'nullable|exists:trips,id',
         ]);
 
-        // Which trip the receipt belongs to decides what an ambiguous symbol
-        // means — '¥' is yen on a Japan trip and yuan on a China one — and what
-        // the amount should default to being read as.
         $trip = null;
         if ($request->filled('trip_id') && auth()->user()->canAccessTrip((int) $request->input('trip_id'))) {
             $trip = Trip::find($request->input('trip_id'));
@@ -305,8 +239,6 @@ class ExpenseController extends Controller
             $trip?->destination_currency
         );
 
-        // Nothing readable on the receipt itself falls back to the trip's own
-        // currency, which is what the traveller was most likely paying in.
         $result['currency'] = $result['currency'] ?? self::defaultCurrencyForTrip($trip);
 
         if (! auth()->user()->ocr_auto_categorize) {

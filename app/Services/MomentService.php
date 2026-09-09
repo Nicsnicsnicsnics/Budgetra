@@ -60,7 +60,8 @@ class MomentService
         foreach ($moment->photos as $photo) {
             Storage::disk('public')->delete($photo->photo_path);
         }
-        $moment->delete(); // cascade-deletes moment_photos rows via the FK
+        $moment->delete();
+
     }
 
     public function pinToArray(Moment $moment): array

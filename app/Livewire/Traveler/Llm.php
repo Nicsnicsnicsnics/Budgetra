@@ -1,20 +1,21 @@
 <?php
 namespace App\Livewire\Traveler;
 
+use App\Livewire\Traveler\Concerns\BuildsProfile;
+use App\Livewire\Traveler\Concerns\ClassifiesText;
+use App\Livewire\Traveler\Concerns\HandlesConversationHistory;
+use App\Livewire\Traveler\Concerns\HandlesCurrency;
+use App\Livewire\Traveler\Concerns\ResolvesPlaces;
 use App\Models\AiConversationDraft;
 use App\Models\AiConversationHistory;
 use App\Models\Trip;
-use App\Models\UserProfile;
-use App\Services\CurrencyConverterService;
 use App\Services\GeminiService;
 use App\Services\GroqService;
 use App\Services\MistralService;
 use App\Services\OpenRouterService;
 use App\Services\SerpApiService;
 use App\Services\SerperService;
-use App\Services\UserProfileSaver;
 use App\Support\PlaceCatalog;
-use App\Support\ProfileCatalog;
 use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
@@ -23,6 +24,11 @@ use Livewire\Component;
 #[Layout('layouts.app', ['active' => 'trips'])]
 class Llm extends Component
 {
+    use BuildsProfile;
+    use ClassifiesText;
+    use HandlesConversationHistory;
+    use HandlesCurrency;
+    use ResolvesPlaces;
 
     public string $aiPrompt      = '';
     public string $aiStep        = '';
@@ -79,22 +85,10 @@ class Llm extends Component
 
     public bool $aiBudgetIsDaily = false;
 
-    // What the traveller actually typed, before conversion, when their currency
-    // isn't PHP. aiBudgetMin/Max are always pesos; this is the figure that goes
-    // into trips.budget_local so reopening a trip shows their own number back
-    // instead of a peso amount re-divided by whatever rate is live that day.
     public ?float $aiBudgetLocal = null;
-
-    public bool $showHistory       = false;
-    public ?int $viewingHistoryId  = null;
-    public ?int $historyEntryToDelete = null;
-
     public bool  $buildingProfile = false;
     public array $profileDraft    = [];
 
-    // Set by pfApplyAnswer() so the retry can say WHY the budget was refused —
-    // "too low" reads very differently from "that wasn't a number". Private and
-    // unpersisted: apply and retry happen in the same request.
     private bool $pfBudgetBelowFloor = false;
 
     public function getProfileInterestsProperty(): array
@@ -102,72 +96,8 @@ class Llm extends Component
         return auth()->user()->userProfile?->interests ?? [];
     }
 
-    public function getConversationHistoryProperty()
-    {
-        return AiConversationHistory::where('user_id', auth()->id())
-            ->latest()
-            ->get();
-    }
-
-    public function getViewingHistoryEntryProperty()
-    {
-        if ($this->viewingHistoryId === null) return null;
-
-        return AiConversationHistory::where('user_id', auth()->id())
-            ->find($this->viewingHistoryId);
-    }
-
-    public function openHistory(): void
-    {
-        $this->showHistory = true;
-    }
-
-    public function closeHistory(): void
-    {
-        $this->showHistory      = false;
-        $this->viewingHistoryId = null;
-    }
-
-    public function viewHistoryEntry(int $id): void
-    {
-
-        $this->showHistory      = true;
-        $this->viewingHistoryId = $id;
-    }
-
-    public function backToHistoryList(): void
-    {
-        $this->viewingHistoryId = null;
-    }
-
-    public function confirmDeleteHistoryEntry(int $id): void
-    {
-        $this->historyEntryToDelete = $id;
-    }
-
-    public function cancelDeleteHistoryEntry(): void
-    {
-        $this->historyEntryToDelete = null;
-    }
-
-    public function deleteHistoryEntry(): void
-    {
-        if (!$this->historyEntryToDelete) return;
-
-        AiConversationHistory::where('user_id', auth()->id())
-            ->where('id', $this->historyEntryToDelete)
-            ->delete();
-
-        if ($this->viewingHistoryId === $this->historyEntryToDelete) {
-            $this->viewingHistoryId = null;
-        }
-
-        $this->historyEntryToDelete = null;
-    }
-
     public function mount(): void
     {
-
         $this->aiCurrency = home_currency();
 
         $this->profileDraft = $this->pfBlankDraft();
@@ -200,14 +130,6 @@ class Llm extends Component
         $this->buildingProfile = (bool) $draft->building_profile;
         $this->profileDraft    = array_merge($this->pfBlankDraft(), (array) ($draft->profile_draft ?? []));
 
-        // Back from the form's interests picker: it has already saved, so read
-        // the picks off the profile and carry on to the review rather than
-        // re-asking the question they just answered.
-        //
-        // Only while interests is still the slot being waited on. mount() can
-        // run more than once for one arrival — a navigate prefetch, a refresh
-        // mid-flight — and dehydrate() has already persisted the advanced
-        // draft, so without this the review is posted a second time.
         if (session()->pull('tara_interests_picked')
             && $this->buildingProfile
             && ($this->profileDraft['awaiting_slot'] ?? '') === 'interests') {
@@ -222,78 +144,6 @@ class Llm extends Component
         }
     }
 
-    private function offerSavedPreferencesIfAny(): void
-    {
-        $profile = auth()->user()?->userProfile;
-        if (!$profile) return;
-
-        $hasHomeCity = trim((string) $profile->home_city) !== '';
-        $hasBudget   = (float) $profile->daily_budget > 0;
-
-        if (!$hasHomeCity && !$hasBudget) return;
-
-        $clauses = [];
-        if ($hasHomeCity) {
-            $clauses[] = trim($profile->home_city) . ' as your starting point';
-        }
-        if ($hasBudget) {
-            $localCode = $profile->daily_budget_currency;
-            $clauses[] = ($localCode !== null && $profile->daily_budget_local > 0)
-                ? (PlaceCatalog::CURRENCY_SYMBOLS[$localCode] ?? '₱') . number_format($profile->daily_budget_local) . ' as your budget'
-                : '₱' . number_format($profile->daily_budget) . ' as your budget';
-        }
-        if (!empty($profile->interests)) {
-            $word = count($profile->interests) === 1 ? 'a travel interest' : 'travel interests';
-            $clauses[] = $this->joinNaturally($profile->interests) . " as {$word}";
-        }
-
-        $this->messages[] = ['role' => 'assistant', 'text' =>
-            "Would you like me to use your saved travel preferences for this trip? "
-            . "I see you've set " . $this->joinNaturally($clauses) . " — want me to use these details?"];
-
-        $this->pendingProfileOffer = true;
-    }
-
-    /**
-     * Fills the trip's origin and budget from the saved profile.
-     *
-     * Called from the two moments a profile becomes usable: accepting the
-     * saved-preferences offer, and finishing the conversational build. That
-     * second call is what this exists for — the offer only fires on a
-     * draft-less mount, so the one trip it never reached was the one planned
-     * straight after the profile was made.
-     *
-     * Only ever fills a gap. Someone already mid-trip when they built their
-     * profile keeps every answer they typed.
-     *
-     * Takes the profile rather than looking it up: the caller that has just
-     * written one holds the fresh row, while auth()->user()->userProfile can
-     * still be the null this request cached before the save.
-     *
-     * @return list<string> what was taken, so the caller can say so out loud
-     */
-    private function applyProfileToTrip(?UserProfile $profile): array
-    {
-        if (!$profile) return [];
-
-        $applied = [];
-
-        if ($this->aiFrom === '' && trim((string) $profile->home_city) !== '') {
-            $this->aiFrom = trim($profile->home_city);
-            $applied[]    = $this->aiFrom;
-        }
-
-        if ($this->aiBudgetMin === 0 && $this->aiBudgetMax === 0 && (float) $profile->daily_budget > 0) {
-            $this->aiBudgetMin = $this->aiBudgetMax = (int) round($profile->daily_budget);
-            if ($profile->daily_budget_currency !== null) {
-                $this->aiCurrency = $profile->daily_budget_currency;
-            }
-            $applied[] = $this->displayAmount($this->aiBudgetMax);
-        }
-
-        return $applied;
-    }
-
     private function joinNaturally(array $items): string
     {
         $items = array_values($items);
@@ -305,31 +155,6 @@ class Llm extends Component
         return implode(', ', $items) . ", and {$last}";
     }
 
-    private function pfBlankDraft(): array
-    {
-        return [
-            'home_city'                => '',
-            'daily_budget'             => 0.0,
-            'travel_style'             => '',
-            'group_member_emails'      => [],
-            'interests'                => [],
-            'sub_interests'            => [],
-            'preferred_transportation' => '',
-            'preferred_accommodation'  => '',
-            'awaiting_slot'            => '',
-            // Both offers ride in this same JSON column, so they survive a page
-            // refresh without needing their own migration.
-            'trip_offer_pending'       => false,
-            'arrival_offer_pending'    => false,
-        ];
-    }
-
-    private function pfSay(string $text): void
-    {
-        $this->messages[] = ['role' => 'assistant', 'text' => $text];
-        $this->dispatch('message-added');
-    }
-
     private function looksLikeProfileSetupRequest(string $text): bool
     {
         return (bool) preg_match(
@@ -338,781 +163,8 @@ class Llm extends Component
         ) || (bool) preg_match('/\bprofile\b[^.?!]{0,20}\b(?:set\s*up|setup|builder)\b/i', $text);
     }
 
-    private function pfIsCancel(string $text): bool
-    {
-        return (bool) preg_match('/^(?:cancel|stop|never\s*mind|nevermind|quit|exit|forget it|not now|later)\b/i', trim($text));
-    }
-
-    /**
-     * Hands off to the profile form's interests step — the card picker with
-     * images — instead of answering the numbered list in chat.
-     *
-     * dehydrate() has already written profileDraft to the draft row by the time
-     * this runs, so ProfileBuilder can pre-fill the city/budget/style the
-     * traveller gave here. Without that pre-fill its save would write them
-     * empty, since a traveller mid-build has no UserProfile yet.
-     */
-    public function pickInterestsInForm(): mixed
-    {
-        session(['tara_interests_return' => true]);
-
-        return $this->redirect(
-            route('profile.setup', ['step' => 4, 'return' => 'trips.plan.ai']),
-            navigate: true
-        );
-    }
-
-    public function startProfileConversation(?string $focusSlot = null): void
-    {
-        $this->buildingProfile = true;
-        $this->aiPrompt        = '';
-        $this->profileDraft    = $this->pfBlankDraft();
-
-        $profile = auth()->user()?->userProfile;
-        if ($profile) {
-            // Through the same gate as a typed answer, so a city saved before
-            // that gate existed is re-asked rather than carried forward.
-            $city = (string) ($profile->home_city ?? '');
-            $this->profileDraft['home_city'] = $this->pfCanonicalCity($city) ?? '';
-            $this->profileDraft['daily_budget']             = (float) ($profile->daily_budget_local ?? $profile->daily_budget ?? 0);
-            $this->profileDraft['travel_style']             = (string) ($profile->travel_style ?? '');
-            $this->profileDraft['group_member_emails']      = (array) ($profile->group_member_emails ?? []);
-            $this->profileDraft['interests']                = (array) ($profile->interests ?? []);
-            $this->profileDraft['sub_interests']            = (array) ($profile->sub_interests ?? []);
-            $this->profileDraft['preferred_transportation'] = (string) ($profile->preferred_transportation ?? '');
-            $this->profileDraft['preferred_accommodation']  = (string) ($profile->preferred_accommodation ?? '');
-        }
-
-        if ($focusSlot !== null && array_key_exists($focusSlot, $this->pfBlankDraft())) {
-            $this->pfClearSlot($focusSlot);
-            $this->profileDraft['awaiting_slot'] = $focusSlot;
-            $this->pfSay($this->pfQuestionFor($focusSlot));
-            return;
-        }
-
-        // Straight into the first question — the offer that got them here has
-        // already said what this is, so an intro line just adds a step.
-        $this->pfAdvanceAndAsk();
-    }
-
-    /**
-     * Asked on arrival when the traveller has no profile at all — including
-     * anyone who took "Skip this step" on the gate screens elsewhere, which is
-     * a browser-only flag the server can't see.
-     *
-     * Only ever set inside mount()'s "no draft yet" branch, so it is asked once
-     * per fresh conversation rather than on every visit — the same protection
-     * offerSavedPreferencesIfAny() already relies on.
-     */
-    private function offerProfileBuildIfNoProfile(): void
-    {
-        if (auth()->user()?->userProfile) return;
-
-        $this->profileDraft['arrival_offer_pending'] = true;
-
-        $this->messages[] = ['role' => 'assistant', 'text' =>
-            "You haven't set up a travel profile yet — want me to set it up for you? "
-            . "It's four quick questions, and it saves me asking about your budget and "
-            . "starting point every time. Say \"yes\", or just tell me about your trip."];
-    }
-
-    /**
-     * Offered once a trip package exists, because by then the traveller has
-     * already given the two answers a profile most needs — where they set off
-     * from and what they spend.
-     */
-    private function offerProfileFromTripIfNone(): void
-    {
-        if (auth()->user()?->userProfile) return;
-        if ($this->buildingProfile) return;
-        if (trim($this->aiFrom) === '') return;
-
-        $daily = $this->pfDailyBudgetFromTrip();
-
-        $known = $daily !== null
-            ? trim($this->aiFrom) . ' and ' . UserProfileSaver::budgetSymbolForHomeCity($this->aiFrom) . number_format($daily) . '/day'
-            : trim($this->aiFrom) . ' as your usual starting point';
-
-        // Supersedes an arrival offer the traveller never answered: this one
-        // knows their city and budget already, so it's the better ask and
-        // must not be shadowed by the older, emptier one.
-        $this->profileDraft['arrival_offer_pending'] = false;
-        $this->profileDraft['trip_offer_pending']    = true;
-
-        $this->pfSay("By the way — want me to save {$known} as your travel profile? "
-            . "Then I won't have to ask next time. Say \"yes\", or just carry on.");
-    }
-
-    /**
-     * The trip budget is a TOTAL in pesos; a profile budget is per-day in the
-     * home city's own currency. Only safe to carry across when that currency
-     * is already pesos — otherwise the figure would be re-converted on save
-     * and inflated by the whole exchange rate.
-     */
-    private function pfDailyBudgetFromTrip(): ?float
-    {
-        $code = UserProfileSaver::currencyForHomeCity(trim($this->aiFrom));
-        if ($code !== null && $code !== 'PHP') return null;
-
-        $total = $this->aiBudgetMax ?: $this->aiBudgetMin;
-        if ($total <= 0) return null;
-
-        return round($total / max(1, $this->aiDays), 2);
-    }
-
-    private function startProfileConversationFromTrip(): void
-    {
-        $this->buildingProfile = true;
-        $this->aiPrompt        = '';
-
-        $daily = $this->pfDailyBudgetFromTrip();
-
-        $this->profileDraft = $this->pfBlankDraft();
-        // An origin we can't place leaves the slot empty so it gets asked for:
-        // a filled slot is never revisited, so seeding it unchecked would be
-        // the one way an unknown city still reached the profile.
-        $this->profileDraft['home_city'] = $this->pfCanonicalCity($this->aiFrom) ?? '';
-        if ($daily !== null) $this->profileDraft['daily_budget'] = $daily;
-
-        $this->pfSay("Great — I've taken those from your trip. Just a few more questions, and you can say \"cancel\" any time.");
-        $this->pfAdvanceAndAsk();
-    }
-
-    private function pfClearSlot(string $slot): void
-    {
-        $blank = $this->pfBlankDraft();
-        $this->profileDraft[$slot] = $blank[$slot];
-        // Sub-interests belong to whichever categories are chosen, so clearing
-        // interests clears them too — pfAutoCompleteRemaining() picks a fresh
-        // set for the new categories.
-        if ($slot === 'interests') {
-            $this->profileDraft['sub_interests'] = [];
-        }
-    }
-
-    private function cancelProfileConversation(): void
-    {
-        $this->buildingProfile = false;
-        $this->profileDraft    = $this->pfBlankDraft();
-        $this->aiPrompt        = '';
-        $this->pfSay("No problem — I've left your profile as it is. Tell me about a trip whenever you're ready.");
-    }
-
-    private function pfMissingSlotKey(): string
-    {
-        $d = $this->profileDraft;
-
-        if (trim((string) ($d['home_city'] ?? '')) === '')  return 'home_city';
-        if ((float) ($d['daily_budget'] ?? 0) <= 0)         return 'daily_budget';
-        if (($d['travel_style'] ?? '') === '')              return 'travel_style';
-        if (($d['travel_style'] ?? '') === 'Group' && empty($d['group_member_emails'])) return 'group_member_emails';
-        if (empty($d['interests']))                         return 'interests';
-
-        // Interests is the last question asked. Sub-interests, transport and
-        // accommodation are filled by pfAutoCompleteRemaining() instead, so
-        // the traveller answers four questions rather than seven.
-        return '';
-    }
-
-    private function pfNumberedList(array $options): string
-    {
-        $out = '';
-        foreach (array_values($options) as $i => $name) {
-            $out .= ($i + 1) . ". {$name}\n";
-        }
-        return rtrim($out);
-    }
-
-    private function pfSubInterestPool(): array
-    {
-        $pool = [];
-        foreach ($this->profileDraft['interests'] as $interest) {
-            foreach (ProfileCatalog::INTERESTS[$interest] ?? [] as $sub) {
-                $pool[] = $sub;
-            }
-        }
-        return array_values(array_unique($pool));
-    }
-
-    private function pfQuestionFor(string $slot): string
-    {
-        return match ($slot) {
-            'home_city' => "What city do you usually travel from?",
-
-            // Wording lifted from the form's own step headings so TARA and the
-            // profile builder ask the same questions the same way. No per-day
-            // or currency hint: the figure is a whole-trip amount, and the
-            // review summary shows the symbol before anything is saved.
-            'daily_budget' => "What is your preferred budget range?",
-
-            'travel_style' => "Do you usually travel solo, or with a group?",
-
-            'group_member_emails' => "Who travels with you? Give me their email addresses, separated by commas.",
-
-            // No option list here: the button rendered under this message opens
-            // the form's card picker, which shows all nine properly. Typing
-            // still works — pfApplyAnswer() is untouched — and anyone who types
-            // something unmatched gets the options from pfRetryMessageFor().
-            'interests' => "What do you enjoy doing?",
-
-            'sub_interests' => "Want to narrow that down a bit? Here's what falls under "
-                . $this->joinNaturally($this->profileDraft['interests']) . ":\n"
-                . $this->pfNumberedList($this->pfSubInterestPool())
-                . "\n\nPick any that fit, or just say \"skip\".",
-
-            'preferred_transportation' => "How do you usually get there?\n"
-                . $this->pfNumberedList(array_keys(ProfileCatalog::TRANSPORTATION_OPTIONS))
-                . "\n\nTell me the number or the name.",
-
-            'preferred_accommodation' => "And where do you like to stay?\n"
-                . $this->pfNumberedList(array_keys(ProfileCatalog::ACCOMMODATION_OPTIONS))
-                . "\n\nTell me the number or the name.",
-
-            default => '',
-        };
-    }
-
-    private function pfAdvanceAndAsk(): void
-    {
-        $slot = $this->pfMissingSlotKey();
-
-        if ($slot === '') {
-            $filled = $this->pfAutoCompleteRemaining();
-
-            $this->profileDraft['awaiting_slot'] = 'confirmation';
-
-            if ($filled) {
-                $this->pfSay("I've filled in the rest based on what you told me — have a look and change anything that's off.");
-            }
-
-            $this->pfSay($this->pfSummary());
-            return;
-        }
-
-        $this->profileDraft['awaiting_slot'] = $slot;
-        $this->pfSay($this->pfQuestionFor($slot));
-    }
-
-    /**
-     * Completes the three slots the traveller is never asked about, once the
-     * four real questions are answered.
-     *
-     * Returns true when it actually filled something, so the summary only
-     * announces auto-fill on a fresh build and not on every trip back to the
-     * review screen after an edit.
-     */
-    private function pfAutoCompleteRemaining(): bool
-    {
-        $needsSubs   = empty($this->profileDraft['sub_interests']);
-        $needsTravel = ($this->profileDraft['preferred_transportation'] ?? '') === '';
-        $needsStay   = ($this->profileDraft['preferred_accommodation'] ?? '') === '';
-
-        if (!$needsSubs && !$needsTravel && !$needsStay) return false;
-
-        $choice = $this->pfChoicesFromAi();
-
-        if ($needsSubs) {
-            $this->profileDraft['sub_interests'] = $choice['sub_interests'] ?: $this->pfFallbackSubInterests();
-        }
-        if ($needsTravel) {
-            $this->profileDraft['preferred_transportation'] = $choice['transportation'] ?: $this->pfFallbackTransportation();
-        }
-        if ($needsStay) {
-            $this->profileDraft['preferred_accommodation'] = $choice['accommodation'] ?: $this->pfFallbackAccommodation();
-        }
-
-        return true;
-    }
-
-    /**
-     * Asks one provider to pick the remaining preferences from the traveller's
-     * answers. Everything it returns is checked against ProfileCatalog before
-     * use, so it can't invent an option the form doesn't offer.
-     *
-     * @return array{sub_interests: array, transportation: string, accommodation: string}
-     */
-    private function pfChoicesFromAi(): array
-    {
-        $empty = ['sub_interests' => [], 'transportation' => '', 'accommodation' => ''];
-
-        $interests = $this->profileDraft['interests'];
-        if (empty($interests)) return $empty;
-
-        $subPool = $this->pfSubInterestPool();
-        $stays   = array_keys(ProfileCatalog::ACCOMMODATION_OPTIONS);
-        $travel  = array_keys(ProfileCatalog::TRANSPORTATION_OPTIONS);
-
-        $interestList = implode(', ', $interests);
-        $subList      = implode(', ', $subPool);
-        $stayList     = implode(', ', $stays);
-        $travelList   = implode(', ', $travel);
-        $budget       = (float) $this->profileDraft['daily_budget'];
-        $style        = (string) $this->profileDraft['travel_style'];
-
-        $prompt = <<<PROMPT
-        A traveler is setting up a travel profile. From their answers, choose the preferences they did not give.
-
-        Their interests: {$interestList}
-        Their daily budget: {$budget}
-        Travel style: {$style}
-
-        Choose:
-        - "sub_interests": 2 to 4 entries chosen ONLY from this list: {$subList}
-        - "transportation": exactly one of: {$travelList}
-        - "accommodation": exactly one of: {$stayList}
-
-        Pick what genuinely fits their interests, budget and style. Use only the values listed above, spelled exactly as shown.
-
-        Return JSON only, no markdown:
-        {"sub_interests": ["..."], "transportation": "...", "accommodation": "..."}
-        PROMPT;
-
-        $data = $this->decodeAiJson($this->tryProviders(fn ($provider) => $provider->generate($prompt)));
-        if ($data === null) return $empty;
-
-        $subs = is_array($data['sub_interests'] ?? null)
-            ? array_values(array_intersect($data['sub_interests'], $subPool))
-            : [];
-
-        $chosenTravel = in_array($data['transportation'] ?? null, $travel, true) ? $data['transportation'] : '';
-        $chosenStay   = in_array($data['accommodation'] ?? null, $stays, true)   ? $data['accommodation']   : '';
-
-        return [
-            'sub_interests'  => $subs,
-            'transportation' => $chosenTravel,
-            'accommodation'  => $chosenStay,
-        ];
-    }
-
-    /** First two sub-options of each chosen interest. */
-    private function pfFallbackSubInterests(): array
-    {
-        $picked = [];
-        foreach ($this->profileDraft['interests'] as $interest) {
-            foreach (array_slice(ProfileCatalog::INTERESTS[$interest] ?? [], 0, 2) as $sub) {
-                $picked[] = $sub;
-            }
-        }
-        return array_values(array_unique($picked));
-    }
-
-    private function pfFallbackTransportation(): string
-    {
-        return (string) array_key_first(ProfileCatalog::TRANSPORTATION_OPTIONS);
-    }
-
-    private function pfFallbackAccommodation(): string
-    {
-        $indulgent = (float) $this->profileDraft['daily_budget'] >= 2000
-            && (in_array('Beach', $this->profileDraft['interests'], true)
-                || in_array('Relaxation', $this->profileDraft['interests'], true));
-
-        return $indulgent ? 'Resort' : 'Hotel';
-    }
-
-    private function pfSummary(): string
-    {
-        $d = $this->profileDraft;
-
-        $symbol = UserProfileSaver::budgetSymbolForHomeCity((string) $d['home_city']);
-        $lines  = "Here's your travel profile:\n"
-            . "- Home city: {$d['home_city']}\n"
-            . "- Budget range: {$symbol}" . number_format((float) $d['daily_budget']) . "\n"
-            . "- Travel style: {$d['travel_style']}\n";
-
-        if ($d['travel_style'] === 'Group' && !empty($d['group_member_emails'])) {
-            $lines .= "- Traveling with: " . implode(', ', $d['group_member_emails']) . "\n";
-        }
-
-        $lines .= "- Interests: " . $this->joinNaturally($d['interests']) . "\n";
-
-        if (!empty($d['sub_interests'])) {
-            $lines .= "- More specifically: " . $this->joinNaturally($d['sub_interests']) . "\n";
-        }
-
-        $lines .= "- Getting there: {$d['preferred_transportation']}\n"
-            . "- Staying in: {$d['preferred_accommodation']}\n\n"
-            . "Should I save this to your profile?";
-
-        return $lines;
-    }
-
-    private function pfResolveChoices(string $text, array $options): array
-    {
-        $options  = array_values($options);
-        $resolved = [];
-
-        if (preg_match_all('/\d{1,2}/', $text, $m)) {
-            foreach ($m[0] as $n) {
-                $index = (int) $n - 1;
-                if (isset($options[$index])) $resolved[] = $options[$index];
-            }
-        }
-
-        $lower = mb_strtolower($text);
-        foreach ($options as $option) {
-            if (str_contains($lower, mb_strtolower($option))) $resolved[] = $option;
-        }
-
-        return array_values(array_unique($resolved));
-    }
-
-    private function pfInterestsFromAi(string $text): array
-    {
-        $labels = implode(', ', array_keys(ProfileCatalog::INTERESTS));
-
-        $prompt = <<<PROMPT
-        A traveler was asked what kinds of trips they enjoy. Map their answer to the closest matching categories from this fixed list, and nothing outside it.
-
-        The list: {$labels}
-
-        Traveler's answer: "{$text}"
-
-        Return only categories they genuinely expressed interest in. If none of them match, return an empty array.
-
-        Return JSON only, no markdown:
-        {"interests": ["Category Name"]}
-        PROMPT;
-
-        $data = $this->decodeAiJson($this->tryProviders(fn ($provider) => $provider->generate($prompt)));
-        if ($data === null || empty($data['interests']) || !is_array($data['interests'])) return [];
-
-        $valid = array_keys(ProfileCatalog::INTERESTS);
-        return array_values(array_intersect($data['interests'], $valid));
-    }
-
-    private function pfApplyAnswer(string $slot, string $text): bool
-    {
-        $text = trim($text);
-
-        switch ($slot) {
-            case 'home_city':
-                $city = $this->pfCanonicalCity($text);
-                if ($city === null) return false;
-                $this->profileDraft['home_city'] = $city;
-                return true;
-
-            case 'daily_budget':
-                if (!preg_match('/\d/', $text)) return false;
-                // The question asks for a "range" to match the form's wording,
-                // but a profile stores one daily_budget figure — so a range
-                // keeps the higher number, the same way aiBudgetMax is the
-                // operative figure everywhere else in this component.
-                $amount = 0.0;
-                foreach (preg_split('/\s*(?:-|–|to)\s*/i', $text) ?: [] as $part) {
-                    $parsed = $this->pfParseAmount($part);
-                    if ($parsed !== null && $parsed > $amount) $amount = $parsed;
-                }
-                if ($amount <= 0) return false;
-
-                // The same floor the trip planner enforces. Without it a budget
-                // accepted here was offered straight back by
-                // offerSavedPreferencesIfAny() and then refused as too low —
-                // after every other question had been answered.
-                $pesos = $this->pfBudgetInPesos($amount);
-                if ($pesos !== null && $pesos < self::MINIMUM_TOTAL_BUDGET) {
-                    $this->pfBudgetBelowFloor = true;
-                    return false;
-                }
-
-                $this->profileDraft['daily_budget'] = min((float) self::MAX_BUDGET, $amount);
-                return true;
-
-            case 'travel_style':
-                if (preg_match('/\bsolo\b|\bjust me\b|\balone\b|\bmyself\b|\bby my ?self\b|^1\b/i', $text)) {
-                    $this->profileDraft['travel_style']        = 'Solo';
-                    $this->profileDraft['group_member_emails'] = [];
-                    return true;
-                }
-                if (preg_match('/\bgroup\b|\bfriends?\b|\bfamily\b|\btogether\b|\bwith\b|\bpartner\b|\bcompanions?\b|^2\b/i', $text)) {
-                    $this->profileDraft['travel_style'] = 'Group';
-                    return true;
-                }
-                return false;
-
-            case 'group_member_emails':
-                $tokens = preg_split('/[\s,;]+/', $text, -1, PREG_SPLIT_NO_EMPTY) ?: [];
-                $valid  = [];
-                foreach ($tokens as $token) {
-                    if (filter_var($token, FILTER_VALIDATE_EMAIL) && !in_array($token, $valid, true)) {
-                        $valid[] = $token;
-                    }
-                }
-                if (empty($valid)) return false;
-                $this->profileDraft['group_member_emails'] = $valid;
-                return true;
-
-            case 'interests':
-                $matched = $this->pfResolveChoices($text, array_keys(ProfileCatalog::INTERESTS));
-                if (empty($matched)) $matched = $this->pfInterestsFromAi($text);
-                if (empty($matched)) return false;
-                $this->profileDraft['interests'] = $matched;
-                // Sub-interests belong to whichever categories were just chosen,
-                // so anything carried over from a previous set no longer applies
-                // — pfAutoCompleteRemaining() picks a fresh set for these.
-                $this->profileDraft['sub_interests'] = [];
-                return true;
-
-            // Never asked as part of the four questions, but still reachable
-            // from the review ("change my interests" re-picks these too).
-            case 'sub_interests':
-                if (preg_match('/^(?:skip|no|none|nope|nah|that\'?s? (?:it|all)|nothing)\b/i', $text)) {
-                    $this->profileDraft['sub_interests'] = [];
-                    return true;
-                }
-                $this->profileDraft['sub_interests'] = $this->pfResolveChoices($text, $this->pfSubInterestPool());
-                return true;
-
-            case 'preferred_transportation':
-                $matched = $this->pfResolveChoices($text, array_keys(ProfileCatalog::TRANSPORTATION_OPTIONS));
-                if (empty($matched)) return false;
-                $this->profileDraft['preferred_transportation'] = $matched[0];
-                return true;
-
-            case 'preferred_accommodation':
-                $matched = $this->pfResolveChoices($text, array_keys(ProfileCatalog::ACCOMMODATION_OPTIONS));
-                if (empty($matched)) return false;
-                $this->profileDraft['preferred_accommodation'] = $matched[0];
-                return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * The catalogue's own spelling of a city, or null when it isn't one we know.
-     *
-     * The form cannot produce an unknown city: its field is pick-only, so the
-     * only value it can hold is one it offered. A conversation takes free text,
-     * which made this the one door a made-up place could walk through — and a
-     * place countryFor() can't place has no currency either, so the budget that
-     * follows was being stored as pesos in silence.
-     *
-     * countryFor() is the same oracle the form's review panel uses, so both
-     * doors now accept exactly the same set. A number fails it too, which is
-     * why the old is_numeric() guard is gone rather than kept alongside.
-     */
-    private function pfCanonicalCity(string $text): ?string
-    {
-        $text = trim($text);
-        if ($text === '' || PlaceCatalog::countryFor($text) === null) return null;
-
-        // Prefer the form's exact spelling so a profile built in chat and one
-        // built in the form read identically on the Profile page.
-        foreach (config('country_cities', []) as $cities) {
-            foreach ($cities as $city) {
-                if (strcasecmp($city, $text) === 0) return $city;
-            }
-        }
-
-        // "manila" -> "Manila", but "NYC" is left alone rather than made "Nyc".
-        return preg_match('/[A-Z]/', $text) ? $text : ucwords(strtolower($text));
-    }
-
-    /**
-     * Three cities to name when we can't place what the traveller typed.
-     *
-     * Same country-fallback rule and same three cities the form shows as its
-     * "Suggested cities", by way of the resolver they share — refusing without
-     * saying what would work is a dead end.
-     */
-    private function pfHomeCitySuggestions(): string
-    {
-        $country = PlaceCatalog::originCountryFor(auth()->user()?->country);
-        $cities  = array_slice(array_values(config("country_cities.{$country}", [])), 0, 3);
-
-        if (empty($cities)) return '';
-
-        $last = array_pop($cities);
-
-        return $cities ? implode(', ', $cities) . " or {$last}" : $last;
-    }
-
-    /**
-     * A profile budget converted to pesos, or null when it can't be.
-     *
-     * The figure is typed in the home city's own currency, so the trip
-     * planner's peso floor can't be applied to the raw number — $500 is a
-     * perfectly good trip budget even though 500 is under ₱10,000.
-     *
-     * Null means "don't judge it": an unknown currency or a rate provider that
-     * is down must not block someone from finishing their profile. The trip
-     * planner still checks the converted figure later.
-     */
-    /**
-     * The trip planner's peso floor, phrased in the currency the traveller is
-     * answering in — which for a profile is the HOME CITY's currency, not the
-     * registration country's, since that is what pfBudgetInPesos() converts
-     * from and what pfSummary() labels the figure with.
-     *
-     * Falls back to pesos when the city has no currency or no rate is live,
-     * which is the same thing displayAmount() does.
-     */
-    private function pfFloorInHomeCurrency(): string
-    {
-        $code = UserProfileSaver::currencyForHomeCity((string) ($this->profileDraft['home_city'] ?? ''));
-        $rate = $code !== null && $code !== 'PHP' ? $this->currencyRate($code) : null;
-
-        if ($rate === null || $rate <= 0) {
-            return '₱' . number_format(self::MINIMUM_TOTAL_BUDGET);
-        }
-
-        return (PlaceCatalog::CURRENCY_SYMBOLS[$code] ?? $code . ' ')
-            . number_format(self::MINIMUM_TOTAL_BUDGET / $rate);
-    }
-
-    private function pfBudgetInPesos(float $amount): ?float
-    {
-        $code = UserProfileSaver::currencyForHomeCity((string) ($this->profileDraft['home_city'] ?? ''));
-
-        if ($code === null) return null;
-        if ($code === 'PHP') return $amount;
-
-        $rate = (new CurrencyConverterService())->rateToPhp($code);
-
-        return $rate === null ? null : $amount * $rate;
-    }
-
-    /**
-     * One money figure from a fragment of text. Not parseMoneyToken(), which
-     * returns an int and so cannot express "1.5k" as 1500.
-     */
-    private function pfParseAmount(string $text): ?float
-    {
-        if (!preg_match('/\d/', $text)) return null;
-
-        $cleaned    = preg_replace('/[^\d.kK]/u', '', str_replace(',', '', $text));
-        if ($cleaned === '' || !preg_match('/\d/', $cleaned)) return null;
-
-        $multiplier = preg_match('/[kK]$/', $cleaned) ? 1000 : 1;
-        $amount     = (float) rtrim($cleaned, 'kK') * $multiplier;
-
-        return $amount > 0 ? $amount : null;
-    }
-
-    private function pfRetryMessageFor(string $slot): string
-    {
-        $cities = $this->pfHomeCitySuggestions();
-
-        return match ($slot) {
-            'home_city'    => $cities === ''
-                ? "That doesn't look like a city name — which city do you usually set off from?"
-                : "That doesn't look like a city I know — I can work with places like {$cities}. Which one is closest to you?",
-            'daily_budget' => $this->pfBudgetBelowFloor
-                ? 'That looks too low to plan a real trip — could you give me a more realistic number (at least '
-                    . $this->pfFloorInHomeCurrency() . ')?'
-                : "I need a number for that — roughly how much?",
-            'travel_style' => "Just so I get it right — is that solo, or with a group?",
-            'group_member_emails' => "I couldn't read an email address in there. Could you list them like name@example.com, separated by commas?",
-            'interests'    => "I couldn't match that to any of the options. Try the numbers, or names like \"Beach\" or \"Food Trip\".",
-            default        => "Sorry, I didn't catch that — could you pick from the list above?",
-        };
-    }
-
-    private function finalizeProfileSave(): void
-    {
-        $d = $this->profileDraft;
-
-        $result = (new UserProfileSaver())->save(auth()->user(), [
-            'home_city'                => $d['home_city'],
-            'daily_budget'             => $d['daily_budget'],
-            'travel_style'             => $d['travel_style'],
-            'group_member_emails'      => $d['group_member_emails'],
-            'interests'                => $d['interests'],
-            'sub_interests'            => $d['sub_interests'],
-            'preferred_transportation' => $d['preferred_transportation'],
-            'preferred_accommodation'  => $d['preferred_accommodation'],
-        ]);
-
-        if (! $result['ok']) {
-            // Stays on confirmation so saying "yes" again retries once the rate
-            // provider recovers, rather than losing everything just collected.
-            $this->pfSay($result['error'] . " Say \"yes\" again to retry.");
-            return;
-        }
-
-        $this->buildingProfile = false;
-        $this->profileDraft    = $this->pfBlankDraft();
-
-        // Carried straight into the trip about to be planned. Without this the
-        // very next question asked for the starting point and budget that were
-        // just given — the profile only reached a LATER visit, which is the
-        // opposite of "saves me asking every time".
-        $applied = $this->applyProfileToTrip($result['profile']);
-
-        $this->pfSay(empty($applied)
-            ? "Saved! Your travel profile is all set. Tell me where you'd like to go and I'll plan around it."
-            : "Saved! Your travel profile is all set. I'll use " . $this->joinNaturally($applied)
-                . " for this trip — just tell me where you'd like to go.");
-    }
-
-    private function automateProfileTurn(string $userText): void
-    {
-        $this->aiPrompt = '';
-
-        if ($this->pfIsCancel($userText)) {
-            $this->cancelProfileConversation();
-            return;
-        }
-
-        $slot = (string) ($this->profileDraft['awaiting_slot'] ?? '');
-
-        if ($slot === 'confirmation') {
-            // "change my budget to 2000" — reuse the same slot vocabulary the
-            // trip flow's edit path already speaks.
-            $editSlot = $this->pfDetectEditSlot($userText);
-
-            // An acceptance only counts when it isn't also asking for a change.
-            // Matching "yes" at the front and returning used to save "yes but
-            // change my budget" verbatim, dropping the request in silence.
-            if (!$editSlot
-                && preg_match('/^(?:yes|yeah|yep|yup|sure|correct|right|save|proceed|go ahead|ok|okay)\b/i', $userText)) {
-                $this->finalizeProfileSave();
-                return;
-            }
-
-            if ($editSlot) {
-                $this->pfClearSlot($editSlot);
-                $this->profileDraft['awaiting_slot'] = $editSlot;
-                $this->pfSay($this->pfQuestionFor($editSlot));
-                return;
-            }
-
-            $this->pfSay("No rush — say \"yes\" when you'd like me to save it, or tell me which part to change (for example, \"change my budget\").");
-            return;
-        }
-
-        if ($slot === '' || $this->pfApplyAnswer($slot, $userText)) {
-            $this->pfAdvanceAndAsk();
-            return;
-        }
-
-        $this->pfSay($this->pfRetryMessageFor($slot));
-    }
-
-    private function pfDetectEditSlot(string $text): ?string
-    {
-        return match (true) {
-            (bool) preg_match('/\b(?:home\s*)?city\b/i', $text)                   => 'home_city',
-            (bool) preg_match('/\bbudget\b|\bspend\b/i', $text)                   => 'daily_budget',
-            (bool) preg_match('/\bstyle\b|\bsolo\b|\bgroup\b/i', $text)           => 'travel_style',
-            (bool) preg_match('/\bemails?\b|\bcompanions?\b|\bmembers?\b/i', $text) => 'group_member_emails',
-            (bool) preg_match('/\binterests?\b/i', $text)                         => 'interests',
-            (bool) preg_match('/\btransport\w*\b|\bflight\b/i', $text)            => 'preferred_transportation',
-            (bool) preg_match('/\bstay\b|\baccommodation\b|\bhotel\b/i', $text)   => 'preferred_accommodation',
-
-            // Last resort, not first. "from" is how you'd name the home city
-            // ("where I travel from"), but it also appears in every "change X
-            // FROM y TO z" — which used to send an accommodation or transport
-            // edit to the city question.
-            (bool) preg_match('/\bfrom\b/i', $text)                               => 'home_city',
-            default => null,
-        };
-    }
-
     public function dehydrate(): void
     {
-
         if (empty($this->messages)) return;
 
         $this->autosaveDraft();
@@ -1161,10 +213,6 @@ class Llm extends Component
             'start_date'           => $this->aiDateFrom,
             'end_date'             => $endDate,
             'budget_limit'         => $this->aiBudgetMax ?: $this->aiBudgetMin,
-            // budget_limit is the peso figure everything reads; these two are
-            // what the traveller actually typed, so reopening the trip shows
-            // their own number rather than a peso amount re-divided by whatever
-            // rate is live that day. Null for a peso budget — nothing converted.
             'budget_currency'      => $this->aiBudgetLocal !== null ? $this->aiCurrency : null,
             'budget_local'         => $this->aiBudgetLocal,
             'destination_currency' => $conversion['code'] ?? null,
@@ -1203,15 +251,9 @@ class Llm extends Component
 
         $this->messages[] = ['role' => 'user', 'text' => $userText];
 
-        // Profile-building is a second, parallel slot-filling flow. It returns
-        // early throughout, so none of the trip state below is touched while
-        // it runs — leaving a half-planned trip exactly as it was.
         if (!empty($this->profileDraft['arrival_offer_pending'])) {
             $this->profileDraft['arrival_offer_pending'] = false;
 
-            // Deliberately strict: the whole message must be the affirmative.
-            // A looser pattern that merely STARTED with one of these read
-            // "please continue" as a yes and hijacked the trip conversation.
             if (preg_match('/^(?:yes|yeah|yep|yup|sure|okay|ok)(?:\s+please)?[.!]?$/i', trim($userText))) {
                 $this->startProfileConversation();
                 return;
@@ -1222,7 +264,7 @@ class Llm extends Component
                 $this->pfSay("No problem — tell me about the trip you'd like to plan.");
                 return;
             }
-            // Anything else is trip talk and falls through untouched.
+
         }
 
         if ($this->buildingProfile) {
@@ -1246,7 +288,6 @@ class Llm extends Component
 
             } elseif (preg_match('/^(?:no|nope|nah|not|negative|wrong|incorrect)\b/i', $trimmedReply)
                 || preg_match('/\bnot interested\b|\bdon\'?t want\b|\bno thanks\b|\bnot (?:that|this) one\b/i', $trimmedReply)) {
-
                 $this->aiPrompt   = '';
                 $this->messages[] = ['role' => 'assistant', 'text' =>
                     "No worries! Tell me about the trip you'd like to plan — where would you like to go, and when?"];
@@ -1261,7 +302,6 @@ class Llm extends Component
                 $index = ((int) $m[1]) - 1;
             } elseif (count($this->aiDestinationChoices) === 1
                 && preg_match('/^(?:yes|yeah|yep|yup|sure|ok|okay|correct|right)\b/i', trim($userText))) {
-
                 $index = 0;
             }
 
@@ -1281,7 +321,6 @@ class Llm extends Component
             } elseif (($optionsCount = $this->parseOptionsCount($userText)) !== null
                 || preg_match('/^(?:more|others?|different|another|something else)\b/i', trim($userText))
             ) {
-
                 $previousChoices = $this->aiDestinationChoices;
                 $choices = $this->suggestDestinations($userText, $optionsCount ?? count($previousChoices));
                 $choices = array_values(array_diff($choices, $previousChoices));
@@ -1327,7 +366,6 @@ class Llm extends Component
 
             } elseif (preg_match('/^(?:no|nope|nah|not|negative|wrong|incorrect)\b/i', $trimmedReply)
                 || preg_match('/\bnot interested\b|\bdon\'?t want\b|\bno thanks\b|\bnot (?:that|this) one\b/i', $trimmedReply)) {
-
                 if ($suggestionSlot === 'destination' && !in_array($suggestion, $this->rejectedDestinations, true)) {
                     $this->rejectedDestinations[] = $suggestion;
                 }
@@ -1342,7 +380,6 @@ class Llm extends Component
                 && (($optionsCount = $this->parseOptionsCount($trimmedReply)) !== null
                     || preg_match('/^(?:more|others?|different|another|something else)\b/i', $trimmedReply))
             ) {
-
                 $choices = $this->suggestDestinations($trimmedReply, $optionsCount ?? 3);
                 if (!empty($choices)) {
                     $this->aiDestinationChoices = $choices;
@@ -1369,8 +406,6 @@ class Llm extends Component
             }
         }
 
-        // Answered before the results reply below, so a "yes" to the profile
-        // offer isn't swallowed by the generic "glad you like it" response.
         if (!empty($this->profileDraft['trip_offer_pending'])) {
             $this->profileDraft['trip_offer_pending'] = false;
 
@@ -1378,7 +413,7 @@ class Llm extends Component
                 $this->startProfileConversationFromTrip();
                 return;
             }
-            // Anything else is ordinary chat and falls through untouched.
+
         }
 
         if ($this->aiStep === 'results') {
@@ -1577,7 +612,6 @@ class Llm extends Component
         }
 
         if ($this->aiTo === '' && $this->isRecommendationRequest($userText)) {
-
             $namedPlace = $this->knownPlaceName($this->cleanCityName($userText), 'destination');
             if ($namedPlace !== '' && $this->aiFrom !== '' && strtolower($namedPlace) === strtolower($this->aiFrom)) {
                 $namedPlace = '';
@@ -1596,7 +630,6 @@ class Llm extends Component
             } else {
                 $suggestion = $this->suggestDestination($userText, $this->rejectedDestinations);
                 if ($suggestion !== '') {
-
                     $this->pendingPlaceSuggestion     = $suggestion;
                     $this->pendingPlaceSuggestionSlot = 'destination';
                     $this->aiPrompt     = '';
@@ -1661,7 +694,6 @@ class Llm extends Component
         $stillMissing = $this->missingSlotKey();
 
         if ($stillMissing !== '') {
-
             $isTangentQuestion = $this->looksLikeQuestion($userText)
                 && !$this->looksLikeAttempt($stillMissing, $userText);
 
@@ -1708,20 +740,19 @@ class Llm extends Component
             return;
         }
 
-        if ($this->aiBudgetMax > 0 && $this->aiBudgetMax < self::MINIMUM_TOTAL_BUDGET) {
+        if ($this->aiBudgetMax > 0 && $this->aiBudgetMax < $this->domesticFloor()) {
             $this->aiBudgetMin  = 0;
             $this->aiBudgetMax  = 0;
             $this->awaitingSlot = 'budget';
             $this->missCount    = 0;
             $this->messages[] = ['role' => 'assistant', 'text' =>
-                'That budget looks too low to plan a real trip — could you give me a more realistic number (at least ' . $this->displayAmount(self::MINIMUM_TOTAL_BUDGET) . ')?'];
+                'That budget looks too low to plan a real trip — could you give me a more realistic number (at least ' . $this->displayAmount($this->domesticFloor()) . ')?'];
             $this->dispatch('message-added');
             return;
         }
 
         if ($this->isInternationalDestination($this->aiTo)
             && ($shortfall = $this->internationalBudgetShortfallMessage()) !== null) {
-
             $this->aiBudgetMin  = 0;
             $this->aiBudgetMax  = 0;
             $this->awaitingSlot = 'budget';
@@ -1788,58 +819,9 @@ class Llm extends Component
         'what', 'why', 'how', 'um', 'uh', 'hmm', 'huh',
     ];
 
-    private const GREETINGS = [
-        'hi', 'hello', 'hey', 'yo', 'sup', 'hiya',
-        'good morning', 'good afternoon', 'good evening', 'good day',
-        'how are you', 'how are you doing', "what's up", 'whats up', 'howdy',
-    ];
-
     private const GREETING_REPLY = "Hello! 😊 How can I help you with your travel plans today?";
 
-    private const PROFANITY_WORDS = [
-        'fuck', 'fucking', 'fucked', 'fucker', 'motherfucker',
-        'shit', 'shitty', 'bullshit',
-        'bitch', 'bitches',
-        'asshole', 'assholes',
-        'bastard', 'cunt', 'dumbass', 'douchebag',
-    ];
-
     private const PROFANITY_REPLY = "Let's keep things friendly here 🙂 — I'm happy to help plan your trip, just let me know your destination, budget, and dates without the language.";
-
-    private const RECOMMEND_TRIGGERS = [
-        'recommend', 'suggest', 'you decide', 'you choose', 'surprise me',
-        'anywhere', 'no idea', "don't know where", 'dont know where',
-        'not sure where', 'not sure', 'pick for me', 'up to you',
-        'whatever you think', 'idk', "i don't know", 'dunno',
-    ];
-
-    private function isRecommendationRequest(string $text): bool
-    {
-        $normalized = strtolower(trim($text, " \t\n\r\0\x0B.!?,"));
-        foreach (self::RECOMMEND_TRIGGERS as $trigger) {
-            if (str_contains($normalized, $trigger)) return true;
-        }
-        return false;
-    }
-
-    private const CORRECTION_CUES = [
-        'actually', 'wait', 'sorry', 'i meant', 'change it', 'change that',
-        'make it', 'instead', 'scratch that', 'update it',
-    ];
-
-    private function looksLikeCorrection(string $text): bool
-    {
-        $normalized = strtolower($text);
-        foreach (self::CORRECTION_CUES as $cue) {
-            if (str_contains($normalized, $cue)) return true;
-        }
-        return false;
-    }
-
-    private function isBudgetEnoughQuestion(string $text): bool
-    {
-        return str_contains($text, '?') && (bool) preg_match('/\benough\b/i', $text);
-    }
 
     private const PROVIDER_ORDER = [
         MistralService::class, OpenRouterService::class, GroqService::class, GeminiService::class,
@@ -1870,20 +852,8 @@ class Llm extends Component
         return is_array($data) ? $data : null;
     }
 
-    private function budgetContextForPrompt(): string
-    {
-        if ($this->aiBudgetMin <= 0 && $this->aiBudgetMax <= 0) return '';
-
-        $travelers = max(1, $this->aiTravelers);
-        $amount    = $this->aiBudgetMax ?: $this->aiBudgetMin;
-        $travelerWord = $travelers === 1 ? 'traveler' : 'travelers';
-
-        return "\n\nTraveler's total trip budget: ₱" . number_format($amount) . " for {$travelers} {$travelerWord}. Every suggestion MUST be realistically reachable and affordable within this budget (round-trip flights + accommodation + food + activities combined) — do not suggest a destination that would obviously blow this budget, such as a long-haul international trip on a small domestic-trip budget.";
-    }
-
     private function suggestDestination(string $userText = '', array $exclude = []): string
     {
-
         set_time_limit(90);
 
         $interests = $this->profileInterests;
@@ -1928,7 +898,6 @@ class Llm extends Component
         }
         if (preg_match('/\b(?:a\s+few|some|multiple|several|other|more)\s+(?:options|choices|destinations|places)\b/i', $text)
             || preg_match('/\b(?:give|show)\s+me\s+(?:some\s+)?options\b|\bmore\s+options\b|\bother\s+options\b|\ba\s+list\s+of\s+(?:destinations|places|options)\b/i', $text)) {
-
             return 3;
         }
         return null;
@@ -1976,24 +945,6 @@ class Llm extends Component
         return $resolved;
     }
 
-    private function isGreetingOnly(string $text): bool
-    {
-        $normalized = strtolower(trim($text, " \t\n\r\0\x0B.!?,"));
-        return in_array($normalized, self::GREETINGS, true);
-    }
-
-    private function containsProfanity(string $text): bool
-    {
-        $pattern = '/\b(?:' . implode('|', array_map(fn ($w) => preg_quote($w, '/'), self::PROFANITY_WORDS)) . ')\b/iu';
-        return (bool) preg_match($pattern, $text);
-    }
-
-    private function isNonAnswerFiller(string $text): bool
-    {
-        $normalized = strtolower(trim($text, " \t\n\r\0\x0B.!?,"));
-        return in_array($normalized, self::NON_ANSWER_FILLERS, true);
-    }
-
     private function applyDirectAnswerFallback(string $userText): void
     {
         if (str_word_count($userText) > 6) return;
@@ -2003,7 +954,6 @@ class Llm extends Component
         if ($mentionedSlot !== null && $mentionedSlot !== $this->awaitingSlot) return;
 
         if ($this->awaitingSlot === 'destination' && $this->aiTo === '') {
-
             if ($this->placeCueDirection($userText) === 'origin') {
                 if ($this->aiFrom === '') {
                     $resolved = $this->knownPlaceName($this->cleanCityName($userText), 'origin');
@@ -2028,7 +978,6 @@ class Llm extends Component
                 }
             }
         } elseif ($this->awaitingSlot === 'travelers' && $this->aiTravelers === 0) {
-
             if (preg_match('/\bsolo\b|\bjust me\b|\balone\b|\bmyself\b/i', $userText)
                 && !preg_match('/\band\b|\bwith\b|\+/i', $userText)) {
                 $this->aiTravelers = 1;
@@ -2056,7 +1005,6 @@ class Llm extends Component
 
     private function extractWithAi(string $userText): string
     {
-
         set_time_limit(90);
 
         $known = sprintf(
@@ -2160,8 +1108,6 @@ PROMPT;
                     $this->aiBudgetLocal = $max;
                 }
             } else {
-                // The AI named no currency, so this is a bare figure and lands
-                // in the traveller's own money like any other.
                 $this->applyLocalBudget($min, $max);
             }
         }
@@ -2200,13 +1146,6 @@ PROMPT;
             . "- Travelers: {$this->aiTravelers}\n"
             . "- Budget: {$this->formattedBudget()}\n\n"
             . "Would you like me to proceed with this plan?";
-    }
-
-    private function formattedBudget(): string
-    {
-        return $this->aiBudgetMin === $this->aiBudgetMax
-            ? $this->displayAmount($this->aiBudgetMax)
-            : $this->displayAmount($this->aiBudgetMin) . ' - ' . $this->displayAmount($this->aiBudgetMax);
     }
 
     private function statusSummary(): string
@@ -2289,8 +1228,7 @@ PROMPT;
             if ($conversion === false) return false;
             if ($conversion !== null) {
                 $this->aiBudgetMin = $this->aiBudgetMax = min(self::MAX_BUDGET, $conversion['pesoAmount']);
-                // Named a currency outright ("$800", "800 CAD"), so the typed
-                // figure is worth keeping for the same reason as a bare one.
+
                 $this->aiBudgetLocal = $conversion['localAmount'];
                 return true;
             }
@@ -2301,8 +1239,6 @@ PROMPT;
             $before = $this->aiBudgetMax;
             $this->applyLocalBudget($v, $v);
 
-            // Unchanged means the rate was unavailable, so nothing was stored
-            // and the caller must treat this as an unanswered slot.
             return $this->aiBudgetMax !== $before || $this->aiBudgetMax > 0;
         }
 
@@ -2444,52 +1380,6 @@ PROMPT;
         };
     }
 
-    private function looksLikeAttempt(string $slot, string $userText): bool
-    {
-        return match ($slot) {
-            'destination' => $this->placeCueDirection($userText) !== 'origin' && $this->hasPlaceLikeCandidate($userText),
-            'origin'      => $this->placeCueDirection($userText) !== 'destination' && $this->hasPlaceLikeCandidate($userText),
-            'travelers' => (bool) preg_match('/\d|\bsolo\b|\balone\b|\bjust me\b|\bmyself\b/i', $userText),
-            'budget'    => (bool) preg_match('/\d/', $userText),
-            'dates'     => (bool) preg_match(
-                '/\d|january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec/i',
-                $userText
-            ),
-            default => false,
-        };
-    }
-
-    private function placeCueDirection(string $text): ?string
-    {
-        $hasOriginCue = (bool) preg_match('/\b(?:from|leaving from|departing from|starting from)\s+[a-z]{2,}/i', $text);
-        $hasDestinationCue = (bool) preg_match(
-            '/\b(?:to|in|at|visit(?:ing)?|travel(?:l?ing)?\s+to|fly(?:ing)?\s+to|go(?:ing)?\s+to|stay(?:ing)?\s+(?:in|at))\s+[a-z]{2,}/i',
-            $text
-        );
-
-        if ($hasOriginCue && !$hasDestinationCue) return 'origin';
-        if ($hasDestinationCue && !$hasOriginCue) return 'destination';
-        return null;
-    }
-
-    private function looksLikeQuestion(string $text): bool
-    {
-        $trimmed = trim($text);
-        if (str_ends_with($trimmed, '?')) return true;
-        return (bool) preg_match('/^(?:is|are|does|do|did|can|could|will|would|should|what|how|why|when|where|who)\b/i', $trimmed);
-    }
-
-    private function hasPlaceLikeCandidate(string $text): bool
-    {
-        if (preg_match('/[A-Z][a-z]+/', $text)) return true;
-
-        $notPlaceWords = 'plan|book|go|travel|visit|find|get|make|do|have|see|know|ask|try|be|buy|spend|save|figure|decide|somewhere|anywhere|someplace';
-        return (bool) preg_match(
-            '/\b(?:to|in|at|from|visit(?:ing)?|travel(?:l?ing)?\s+to|fly(?:ing)?\s+to|go(?:ing)?\s+to|stay(?:ing)?\s+(?:in|at))\s+(?!(?:' . $notPlaceWords . ')\b)[a-z]{2,}\b/iu',
-            $text
-        );
-    }
-
     private function conversationSummary(): string
     {
         $facts = [];
@@ -2533,7 +1423,6 @@ PROMPT;
     #[On('ai-process-trip')]
     public function processAiTrip(): void
     {
-
         set_time_limit(450);
 
         $summary = $this->conversationSummary();
@@ -2544,7 +1433,6 @@ PROMPT;
         });
 
         if ($package) {
-
             if ($this->aiFrom === '') {
                 $resolved = $this->knownPlaceName($this->cleanCityName($package['from'] ?? ''));
                 if ($resolved !== '') $this->aiFrom = $resolved;
@@ -2756,146 +1644,6 @@ PROMPT;
         return $this->capPackageToBudget($rawPackage, $budget);
     }
 
-    private function matchKnownPlace(string $city, ?string $slotContext = null): ?array
-    {
-        $map = PlaceCatalog::IATA_CODES;
-
-        $key = strtolower(trim($city));
-        if (isset($map[$key])) return ['name' => $key, 'code' => $map[$key]];
-
-        $words = preg_split('/[\s,!?.;:]+/', $key, -1, PREG_SPLIT_NO_EMPTY);
-        $count = count($words);
-        for ($len = $count - 1; $len >= 1; $len--) {
-            for ($start = 0; $start + $len <= $count; $start++) {
-                $candidate = implode(' ', array_slice($words, $start, $len));
-                if (!isset($map[$candidate])) continue;
-
-                if ($len === 1 && $count > 1 && mb_strlen($candidate) <= 3) continue;
-
-                return ['name' => $candidate, 'code' => $map[$candidate]];
-            }
-        }
-
-        if ($key !== '' && mb_strlen($key) <= 40 && !$this->looksLikeGibberish($key)) {
-            $bestName = null;
-            $bestPct  = 0.0;
-            foreach (array_keys($map) as $candidateName) {
-                similar_text($key, $candidateName, $pct);
-                if ($pct > $bestPct) {
-                    $bestPct  = $pct;
-                    $bestName = $candidateName;
-                }
-            }
-
-            if ($bestName !== null && $bestPct >= 75.0
-                && !($this->pendingPlaceSuggestion !== null && $this->pendingPlaceSuggestionSlot !== null)) {
-                $this->pendingPlaceSuggestion = ucwords($bestName);
-                $this->pendingPlaceSuggestionSlot = $slotContext;
-                return null;
-            }
-        }
-
-        return $this->aiPlaceFallback($key, $slotContext);
-    }
-
-    private function aiPlaceFallback(string $key, ?string $slotContext = null): ?array
-    {
-
-        if ($key === '' || mb_strlen($key) > 40) return null;
-        if (in_array($key, self::NON_ANSWER_FILLERS, true)) return null;
-        if (array_key_exists($key, $this->aiPlaceCache)) return $this->aiPlaceCache[$key];
-
-        if ($this->looksLikeGibberish($key)) return $this->aiPlaceCache[$key] = null;
-
-        set_time_limit(90);
-
-        $prompt = <<<PROMPT
-        Is "{$key}" a real, specific travel destination — an actual city, town, or island that genuinely exists?
-
-        Be skeptical. Only answer yes if you are genuinely confident this is a real place you have real knowledge of — not just because the name sounds plausible or place-like. If you don't specifically recognize it, or aren't sure, answer no. This is NOT a made-up place, NOT a generic word or phrase, and NOT a whole country by itself.
-
-        If yes, return its most common English city/town/island name, and its IATA code is REQUIRED — never leave it null when is_real_place is true. If the place has no airport of its own, you MUST still give the IATA code of the real nearest major airport travelers would actually fly into to reach it (e.g. a small town near a bigger city uses that city's airport code).
-        If no, return false and null for both fields.
-
-        Return JSON only, no markdown:
-        {"is_real_place": true or false, "name": "city name or null", "iata_code": "CODE or null"}
-        PROMPT;
-
-        $providers = self::PROVIDER_ORDER;
-
-        $first = $this->askPlaceVerifier($prompt, $providers);
-        if ($first === null) {
-            $this->placeVerificationFailed = true;
-            $this->placeVerificationFailedSlot = $slotContext;
-            return $this->aiPlaceCache[$key] = null;
-        }
-
-        $second = $this->askPlaceVerifier($prompt, array_values(array_diff($providers, [$first['provider']])));
-        if ($second === null) {
-            $this->placeVerificationFailed = true;
-            $this->placeVerificationFailedSlot = $slotContext;
-            return $this->aiPlaceCache[$key] = null;
-        }
-
-        if ($first['data'] === null || $second['data'] === null) {
-
-            return $this->aiPlaceCache[$key] = null;
-        }
-
-        $code = strtoupper(trim((string) ($first['data']['iata_code'] ?? '')));
-        if (!preg_match('/^[A-Z]{3}$/', $code)) {
-            $code = strtoupper(trim((string) ($second['data']['iata_code'] ?? '')));
-        }
-        if (!preg_match('/^[A-Z]{3}$/', $code)) {
-            return $this->aiPlaceCache[$key] = null;
-        }
-
-        return $this->aiPlaceCache[$key] = ['name' => strtolower(trim((string) $first['data']['name'])), 'code' => $code];
-    }
-
-    private function askPlaceVerifier(string $prompt, array $providerClasses): ?array
-    {
-        foreach ($providerClasses as $class) {
-            try {
-                $raw = (new $class())->generate($prompt);
-            } catch (\Throwable) {
-                continue;
-            }
-
-            if (!$raw) continue;
-
-            $json  = $this->decodeAiJson($raw);
-            $valid = $json !== null && !empty($json['is_real_place']) && !empty($json['name']) && !empty($json['iata_code']);
-
-            return ['provider' => $class, 'data' => $valid ? $json : null];
-        }
-
-        return null;
-    }
-
-    private function looksLikeGibberish(string $text): bool
-    {
-
-        if (preg_match('/[a-zA-Z]{2,}\d+|\d+[a-zA-Z]{2,}/', $text)) return true;
-
-        if (preg_match('/(.)\1{3,}/i', $text)) return true;
-
-        if (preg_match('/(.{2,4})\1{2,}/i', $text)) return true;
-
-        $nonSpace = preg_replace('/\s+/u', '', $text);
-        if ($nonSpace !== '') {
-            $letters = preg_replace('/[^\p{L}]/u', '', $nonSpace);
-            if (mb_strlen($letters) / mb_strlen($nonSpace) < 0.7) return true;
-        }
-
-        return false;
-    }
-
-    public function iataCode(string $city): string
-    {
-        return $this->matchKnownPlace($city)['code'] ?? '';
-    }
-
     private const PHILIPPINE_IATA_CODES = [
         'MNL', 'CEB', 'DVO', 'MPH', 'KLO', 'TAG', 'PPS', 'ENI', 'USU', 'IAO',
         'BCD', 'ILO', 'ZAM', 'CGY', 'GES', 'TAC', 'DGT', 'SUG', 'CBO', 'BSO',
@@ -2903,106 +1651,17 @@ PROMPT;
         'BXU', 'PAG', 'VRC', 'TUG', 'CYZ',
     ];
 
-    /**
-     * Whether this trip leaves the traveller's own country.
-     *
-     * The question used to be "is the destination a Philippine airport?",
-     * which only matches the one above while the traveller is Filipino. For
-     * anyone else it was wrong in the expensive direction: a Canadian flying
-     * Toronto to Vancouver was charged the overseas minimum for a domestic
-     * hop, because YVR simply isn't on the Philippine list.
-     *
-     * For a Philippine origin the comparison reduces to the old test — the
-     * destination is foreign exactly when it isn't Philippine — so nothing
-     * changes for them.
-     */
-    private function isInternationalDestination(string $cityName): bool
-    {
-        $destination = PlaceCatalog::countryFor($cityName);
-
-        // A place we can't put in a country keeps the old airport-code
-        // answer rather than being guessed at.
-        if ($destination === null) {
-            $code = $this->iataCode($cityName);
-            return $code !== '' && !in_array($code, self::PHILIPPINE_IATA_CODES, true);
-        }
-
-        // No origin given yet: fall back to where they registered, which
-        // originCountryFor() already resolves to the Philippines when unknown.
-        $origin = PlaceCatalog::countryFor($this->aiFrom)
-            ?? PlaceCatalog::originCountryFor(auth()->user()?->country);
-
-        return strcasecmp($destination, $origin) !== 0;
-    }
-
-    private function knownPlaceName(string $text, ?string $slotContext = null): string
-    {
-        $match = $this->matchKnownPlace($text, $slotContext);
-        return $match !== null ? ucwords($match['name']) : '';
-    }
-
-    private function resolveCode(string $city): string
-    {
-        $code = $this->iataCode($city);
-        return $code !== '' ? $code : trim($city);
-    }
-
-    private function sameOriginAndDestination(): bool
-    {
-        if ($this->aiFrom === '' || $this->aiTo === '') return false;
-        return $this->samePlace($this->aiFrom, $this->aiTo);
-    }
-
-    private function samePlace(string $a, string $b): bool
-    {
-        if ($a === '' || $b === '') return false;
-        if (strtolower($a) === strtolower($b)) return true;
-
-        $codeA = $this->iataCode($a);
-        return $codeA !== '' && $codeA === $this->iataCode($b);
-    }
-
-    /**
-     * A per-day sanity baseline for judging whether a trip budget is realistic.
-     *
-     * Deliberately NOT the profile's budget figure. That is a WHOLE-TRIP amount
-     * — offerSavedPreferencesIfAny() seeds a trip total straight from it, and
-     * TripPlannerWizard uses it as a trip minimum — so reading it as a per-day
-     * floor told travellers a perfectly good budget was too tight: a ₱25,000
-     * profile turned "is ₱30,000 enough for 5 days?" into "you need ₱125,000".
-     */
-    private function budgetFloor(): int
-    {
-        return 500;
-    }
-
     private const INTERNATIONAL_FLIGHT_FLOOR = 15000;
-    private const INTERNATIONAL_DAILY_FLOOR  = 3000;
 
-    private function wantsInternational(string $text): bool
-    {
-        return (bool) preg_match('/\binternational\b|\babroad\b|\boverseas\b|\bout of the country\b/i', $text);
-    }
+    private const INTERNATIONAL_ROOM_FLOOR   = 1500;
 
-    private function internationalBudgetShortfallMessage(): ?string
-    {
-        if ($this->aiBudgetMin <= 0 && $this->aiBudgetMax <= 0) return null;
-
-        $days    = $this->aiDays > 0 ? $this->aiDays : 7;
-        $budget  = $this->aiBudgetMax ?: $this->aiBudgetMin;
-        $minimum = self::INTERNATIONAL_FLIGHT_FLOOR + (self::INTERNATIONAL_DAILY_FLOOR * $days);
-
-        if ($budget >= $minimum) return null;
-
-        $fromText = $this->aiFrom !== '' ? " from {$this->aiFrom}" : '';
-        return "Your {$this->formattedBudget()} budget is too low for a {$days}-day international trip{$fromText}. Please increase your budget.";
-    }
+    private const INTERNATIONAL_LIVING_FLOOR = 1500;
 
     private function blockUnaffordableSlotEdit(string $slot): bool
     {
         if ($slot !== 'destination' && $slot !== 'budget') return false;
 
-        if ($this->aiBudgetMax > 0 && $this->aiBudgetMax < self::MINIMUM_TOTAL_BUDGET) {
+        if ($this->aiBudgetMax > 0 && $this->aiBudgetMax < $this->domesticFloor()) {
             $this->aiBudgetMin      = 0;
             $this->aiBudgetMax      = 0;
             $this->awaitingSlot     = 'budget';
@@ -3010,7 +1669,7 @@ PROMPT;
             $this->missCount        = 0;
             $this->aiPrompt         = '';
             $this->messages[]       = ['role' => 'assistant', 'text' =>
-                'That budget looks too low to plan a real trip — could you give me a more realistic number (at least ' . $this->displayAmount(self::MINIMUM_TOTAL_BUDGET) . ')?'];
+                'That budget looks too low to plan a real trip — could you give me a more realistic number (at least ' . $this->displayAmount($this->domesticFloor()) . ')?'];
             $this->dispatch('message-added');
             return true;
         }
@@ -3032,6 +1691,12 @@ PROMPT;
     }
 
     private const MINIMUM_TOTAL_BUDGET = 10000;
+
+    private const DOMESTIC_FLIGHT_FLOOR = 3000;
+
+    private const DOMESTIC_ROOM_FLOOR   = 500;
+
+    private const DOMESTIC_LIVING_FLOOR = 500;
 
     private const MIN_FOOD_PER_DAY_PER_TRAVELER = 300;
     private const MIN_ACCOMMODATION_PER_NIGHT   = 800;
@@ -3140,13 +1805,6 @@ PROMPT;
         'KES' => ['name' => 'Kenyan shillings',   'symbol' => 'KSh '],
     ];
 
-    private function currencySuffixWords(): string
-    {
-        $words = array_map(fn ($code) => strtolower($code), array_keys(self::SUPPORTED_CURRENCIES));
-        $words[] = 'pesos?';
-        return implode('|', $words);
-    }
-
     private const CURRENCY_ALIASES = [
         '$' => 'USD', '＄' => 'USD', 'usd' => 'USD',
         '€' => 'EUR', 'eur' => 'EUR',
@@ -3162,150 +1820,6 @@ PROMPT;
         'egp' => 'EGP', 'ngn' => 'NGN', '₦' => 'NGN', 'zar' => 'ZAR', 'kes' => 'KES',
         '₱' => 'PHP', 'php' => 'PHP', 'peso' => 'PHP', 'pesos' => 'PHP',
     ];
-
-    private function currencyRate(string $code): ?float
-    {
-        if ($code === 'PHP') return 1.0;
-
-        return (new CurrencyConverterService())->rateToPhp($code);
-    }
-
-    /**
-     * Records a budget the traveller typed WITHOUT naming a currency.
-     *
-     * A bare number is in their own money, not pesos. The wizard fixed this in
-     * 2026_08_27_130100 — a Canadian typing 3,000 for CAD 3,000 got a ₱3,000
-     * trip — but every path into this component still took the figure at face
-     * value. Everything downstream (the budget floors, capPackageToBudget,
-     * expenses, the dashboards, admin reports) is peso-denominated, so the
-     * conversion belongs here rather than in each of them.
-     *
-     * Leaves the budget untouched when the rate is unavailable, so the slot
-     * stays empty and gets asked again — the same refusal UserProfileSaver
-     * makes. budget_limit is a peso column by definition, so an unconverted
-     * foreign figure there is not a neutral number, it is a wrong peso amount
-     * every later reader trusts.
-     */
-    private function applyLocalBudget(float $min, float $max): void
-    {
-        $code = home_currency();
-
-        if ($code === 'PHP') {
-            // Reset the currency too: a bare number after "$500" means they
-            // have gone back to their own money, and leaving USD set would
-            // re-render the new figure through a rate it was never in.
-            $this->aiCurrency    = $code;
-            $this->aiBudgetLocal = null;
-            $this->aiBudgetMin   = (int) min(self::MAX_BUDGET, $min);
-            $this->aiBudgetMax   = (int) min(self::MAX_BUDGET, $max);
-            return;
-        }
-
-        $rate = $this->currencyRate($code);
-        if ($rate === null) return;
-
-        $this->aiCurrency    = $code;
-        $this->aiBudgetLocal = $max;
-        $this->aiBudgetMin   = (int) min(self::MAX_BUDGET, round($min * $rate));
-        $this->aiBudgetMax   = (int) min(self::MAX_BUDGET, round($max * $rate));
-    }
-
-    private function detectAndConvertCurrency(string $text): array|false|null
-    {
-        $symbolOrCode = '(?:\$|＄|€|£|￡|¥|￥|₩|￦|₱|₹|₫|₦|USD|EUR|GBP|JPY|SGD|AUD|KRW|HKD|THB|MYR|AED|PHP|pesos?'
-            . '|IDR|VND|CNY|INR|NZD|CAD|BRL|MXN|ARS|SAR|EGP|NGN|ZAR|KES)';
-
-        $number = '(?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)(?:[kK](?![a-zA-Z]))?';
-
-        if (preg_match('/(' . $symbolOrCode . ')\s*(' . $number . ')/iu', $text, $m)) {
-            [$marker, $amountRaw] = [$m[1], $m[2]];
-        } elseif (preg_match('/(' . $number . ')\s*(' . $symbolOrCode . ')/iu', $text, $m)) {
-            [$amountRaw, $marker] = [$m[1], $m[2]];
-        } else {
-            return null;
-        }
-
-        $code = self::CURRENCY_ALIASES[strtolower($marker)] ?? null;
-        if ($code === null || $code === 'PHP') return null;
-
-        $currency = self::SUPPORTED_CURRENCIES[$code] ?? null;
-        if ($currency === null) return null;
-
-        $hasThousandsSuffix = (bool) preg_match('/[kK]$/', $amountRaw);
-        $numericPart = $hasThousandsSuffix ? substr($amountRaw, 0, -1) : $amountRaw;
-        $foreignAmount = (float) str_replace(',', '', $numericPart);
-        if ($hasThousandsSuffix) $foreignAmount *= 1000;
-        if ($foreignAmount <= 0) return null;
-
-        $this->aiCurrency = $code;
-
-        $rate = $this->currencyRate($code);
-        if ($rate === null) return false;
-
-        return [
-            'code'         => $code,
-            'currencyName' => $currency['name'],
-            'pesoAmount'   => (int) round($foreignAmount * $rate),
-            'localAmount'  => $foreignAmount,
-            'displayLabel' => $currency['symbol'] . number_format($foreignAmount),
-        ];
-    }
-
-    private function detectUnsupportedCurrency(string $text): ?string
-    {
-        $number = '(?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)';
-
-        if (preg_match('/\b([A-Z]{3})\b\s*' . $number . '/', $text, $m)
-            || preg_match('/' . $number . '\s*\b([A-Z]{3})\b/', $text, $m)) {
-            $code = strtoupper($m[1]);
-            if (!isset(self::SUPPORTED_CURRENCIES[$code])) return $code;
-        }
-
-        foreach (['₴' => 'UAH'] as $sym => $code) {
-            if (str_contains($text, $sym)) return $code;
-        }
-
-        return null;
-    }
-
-    public function displayAmount(int|float $pesoAmount, ?string $currencyCode = null): string
-    {
-        $code = $currencyCode ?? $this->aiCurrency;
-        if (!isset(self::SUPPORTED_CURRENCIES[$code])) $code = 'PHP';
-
-        $rate = $this->currencyRate($code);
-        if ($rate === null) {
-            return self::SUPPORTED_CURRENCIES['PHP']['symbol'] . number_format($pesoAmount);
-        }
-
-        $currency = self::SUPPORTED_CURRENCIES[$code];
-        return $currency['symbol'] . number_format($pesoAmount / $rate);
-    }
-
-    private function destinationCurrencyCode(): ?string
-    {
-        if ($this->aiTo === '') return null;
-        return PlaceCatalog::DESTINATION_CURRENCIES[strtolower(trim($this->aiTo))] ?? null;
-    }
-
-    private function destinationBudgetConversion(): ?array
-    {
-        if ($this->aiBudgetMax <= 0) return null;
-
-        $code = $this->destinationCurrencyCode();
-        if ($code === null) return null;
-
-        $rate = $this->currencyRate($code);
-        if ($rate === null) return null;
-
-        return ['code' => $code, 'amount' => round($this->aiBudgetMax / $rate, 2)];
-    }
-
-    private function formatDestinationAmount(string $code, float $amount): string
-    {
-        $symbol = self::SUPPORTED_CURRENCIES[$code]['symbol'] ?? null;
-        return $symbol !== null ? $symbol . number_format($amount) : number_format($amount) . ' ' . $code;
-    }
 
     private function pickFromPool(array $pool, int $gen, int $poolSize = 3): array
     {
@@ -3428,7 +1942,6 @@ PROMPT;
 
     public function editWithWizard(?string $section = null): mixed
     {
-
         $year = date('Y');
         if ($this->aiDateTo && preg_match('/(\d{4})$/', $this->aiDateTo, $ym)) {
             $year = $ym[1];
@@ -3449,28 +1962,6 @@ PROMPT;
     }
 
     private const MAX_BUDGET = 10_000_000;
-
-    private function parseMoneyToken(string $token): int
-    {
-        $token = trim($token);
-        $token = preg_replace('/\s*(?:php|pesos?)$/i', '', $token);
-        if (preg_match('/^(\d+(?:,\d{3})*)\s*[kK]$/', $token, $m)) {
-            return min(self::MAX_BUDGET, (int) str_replace(',', '', $m[1]) * 1000);
-        }
-        return min(self::MAX_BUDGET, (int) str_replace(',', '', $token));
-    }
-
-    private function cleanCityName(string $name): string
-    {
-        $name = trim($name);
-
-        $name = preg_replace('/^\s*(go(?:ing)?|travel(?:ling)?|fly(?:ing)?|visit(?:ing)?|head(?:ing)?|trip)\s+(?:to\s+)?/i', '', $name);
-
-        $name = preg_replace('/\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b.*/i', '', $name);
-
-        $name = preg_replace('/\s+\d+.*$/', '', $name);
-        return ucwords(strtolower(trim($name)));
-    }
 
     private function parseDateRange(string $text): ?array
     {
@@ -3640,8 +2131,6 @@ PROMPT;
             $v = $this->parseMoneyToken($m[1]);
             $this->applyLocalBudget($v, $v);
 
-        // The next two name pesos outright ("₱5,000", "5000 pesos"), so they
-        // are already in the storage currency and must not be converted again.
         } elseif (preg_match('/[₱]\s*(' . $big . ')/u', $withoutDate, $m)) {
             $this->aiBudgetMin = $this->aiBudgetMax = $this->parseMoneyToken($m[1]);
 
@@ -3710,7 +2199,6 @@ PROMPT;
 
         if ($this->aiTo === '' && !$ambiguousTo
             && preg_match('/\b(?:travel(?:l?ing)?\s+(?:to|in)|go(?:ing)?\s+(?:to|in)|visit(?:ing)?|fly(?:ing)?\s+to|heading\s+to|stay(?:ing)?\s+(?:in|at)|to|in|at)\s+(' . $anyCase . ')\b/iu', $withoutDate, $mtl)) {
-
             $resolved = $this->knownPlaceName($this->cleanCityName($mtl[1]), 'destination');
             if ($resolved !== '') {
                 $this->aiTo = $resolved;

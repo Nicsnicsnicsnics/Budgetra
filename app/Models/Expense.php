@@ -13,17 +13,13 @@ class Expense extends Model
     protected function casts(): array
     {
         return [
-            // amount is ALWAYS pesos — the figure budgets and totals are measured
-            // against. amount_original is what the traveller actually spent, in
-            // amount_currency, kept so the peso value can be re-derived and so an
-            // edit never re-converts an already-converted number.
+
             'amount'          => 'decimal:2',
             'amount_original' => 'decimal:2',
             'expense_date'    => 'date',
         ];
     }
 
-    /** True when this expense was paid in something other than pesos. */
     public function isForeign(): bool
     {
         return $this->amount_currency !== null
@@ -31,7 +27,6 @@ class Expense extends Model
             && $this->amount_original !== null;
     }
 
-    /** "¥3,500" for a foreign expense, "₱1,360" for a peso one. */
     public function originalAmountLabel(): string
     {
         if (! $this->isForeign()) {

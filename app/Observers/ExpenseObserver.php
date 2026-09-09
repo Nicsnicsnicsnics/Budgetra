@@ -22,14 +22,6 @@ class ExpenseObserver
         $this->adjustActualSpent($expense->trip_id, $expense->category, -$expense->amount);
     }
 
-    // ExpenseController::update() has no budget-sync logic of its own —
-    // unlike store() (which calls syncBudgetForExpense() explicitly) and
-    // delete() (handled by deleted() above), an edited amount/category/trip
-    // would otherwise never be reflected in TripBudget.actual_spent, leaving
-    // it permanently wrong after any edit. Reverse whatever the expense used
-    // to count toward, then reapply it under its current values — this
-    // covers an amount correction, a category change, and moving the
-    // expense to a different trip, all with the same two calls.
     public function updated(Expense $expense): void
     {
         if (!$expense->wasChanged(['trip_id', 'category', 'amount'])) return;
@@ -59,9 +51,6 @@ class ExpenseObserver
         $this->checkOverallBudgetExceeded($trip);
     }
 
-    // Overall trip budget (Trip::budget_limit), as opposed to the per-category
-    // checks in syncBudgetForExpense() below which compare against each
-    // TripBudget row's own estimated_cost.
     private function checkOverallBudgetExceeded(?Trip $trip): void
     {
         if (!$trip || $trip->budget_limit <= 0) return;
@@ -106,7 +95,6 @@ class ExpenseObserver
         $trip = Trip::find($expense->trip_id);
         if (!$trip || !optional($trip->user)->notify_budget_alerts) return;
 
-        // 50% threshold — fires budget_warning (only when below 80%)
         if ($pct >= 0.50 && $pct < 0.80) {
             $exists = Notification::where('user_id', $trip->user_id)
                 ->where('trip_id', $expense->trip_id)
@@ -124,7 +112,6 @@ class ExpenseObserver
             }
         }
 
-        // 80% threshold — fires budget_alert
         if ($pct >= 0.80) {
             $exists = Notification::where('user_id', $trip->user_id)
                 ->where('trip_id', $expense->trip_id)
