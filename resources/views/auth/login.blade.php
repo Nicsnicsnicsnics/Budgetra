@@ -9,7 +9,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ asset('css/style.css') }}">
+    {{-- Versioned like the app layouts: without it the browser serves whatever
+     copy of style.css it already had, and every change to this page's styling
+     needs a hard refresh before anyone sees it. --}}
+<link rel="stylesheet" href="{{ asset('css/style.css') }}?v={{ filemtime(public_path('css/style.css')) }}">
 </head>
 <body style="margin:0;padding:0;">
 
@@ -27,7 +30,6 @@
     <div class="auth-panel-right" style="order:1;">
         <div class="auth-form-wrap">
             <h1 class="auth-title">Welcome Back!</h1>
-            <p class="auth-subtitle">Enter your credentials to access your trips.</p>
 
             @if ($errors->any())
             <div class="alert alert-danger">
@@ -40,20 +42,23 @@
 
                 <div class="form-group">
                     <label class="form-label" for="email">Email Address</label>
-                    <input id="email" type="email" name="email"
-                           value="{{ old('email') }}"
-                           class="form-control {{ $errors->has('email') ? 'is-invalid' : '' }}"
-                           placeholder="name@example.com" required autofocus>
+                    <div class="input-wrapper">
+                        <span class="input-icon"><i class="fa-regular fa-envelope"></i></span>
+                        <input id="email" type="email" name="email"
+                               value="{{ old('email') }}"
+                               class="form-control {{ $errors->has('email') ? 'is-invalid' : '' }}"
+                               placeholder="" required autofocus>
+                    </div>
                     @error('email')<div class="error">{{ $message }}</div>@enderror
                 </div>
 
                 <div class="form-group">
                     <label class="form-label" for="password">Password</label>
                     <div class="input-wrapper">
-                        <span class="input-icon"><i class="fa-solid fa-key"></i></span>
+                        <span class="input-icon"><i class="fa-solid fa-lock"></i></span>
                         <input id="password" type="password" name="password"
                                class="form-control {{ $errors->has('password') ? 'is-invalid' : '' }}"
-                               placeholder="••••••••" required>
+                               placeholder="" required>
                         <span class="input-suffix" id="togglePwd" style="cursor:pointer;">
                             <i class="fa-regular fa-eye" id="eyeIcon"></i>
                         </span>
@@ -77,6 +82,7 @@
     </div>
 </div>
 
+<script src="{{ asset('js/auth-form.js') }}?v={{ filemtime(public_path('js/auth-form.js')) }}"></script>
 <script>
 document.getElementById('togglePwd').addEventListener('click', function () {
     var pwd  = document.getElementById('password');

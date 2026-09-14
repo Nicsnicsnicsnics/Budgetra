@@ -745,6 +745,73 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
 .auth-terms-check a { color: var(--primary); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 
+/* ── Auth forms: two weights of "this field needs you" ──────────────────
+   Scoped to the auth pages; the rest of the app's forms are a separate call.
+   Both weights are built from var(--danger), so the border, the icon, the
+   label and the message under the field are all the one red rather than four
+   near-misses. */
+
+/* Weight one — a hint. You clicked into a required field that is still empty.
+   Nothing is wrong yet, so this is the border and the gutter icon only.
+   :invalid does the work: a required field matches it while empty and stops
+   matching the moment there is something valid in it, so the hint clears
+   itself as you type. Email holds it until the address parses, which is the
+   same statement. */
+.auth-wrapper .form-control:required:focus:invalid {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+}
+
+/* Weight two — an error. A submit was actually refused, by the browser or by
+   the server. The red now holds with or without focus and the whole field
+   group carries it: label, border, icon, a wash behind the input and the
+   message below. This is what replaced the browser's "Please fill out this
+   field" bubble, so it has to carry that much on its own.
+   .is-invalid was already in both auth templates for server-side errors but
+   had never been styled anywhere, so a rejected login marked its fields in
+   the markup and then showed nothing at all. */
+.auth-wrapper .form-control.is-invalid,
+.auth-wrapper .form-control.is-invalid:focus {
+  border-color: var(--danger);
+  background: rgba(220, 38, 38, 0.04);
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.16);
+}
+.auth-wrapper .form-group:has(.form-control.is-invalid) .form-label {
+  color: var(--danger);
+}
+.auth-wrapper .input-wrapper:has(.form-control:required:focus:invalid) .input-icon,
+.auth-wrapper .input-wrapper:has(.form-control.is-invalid) .input-icon {
+  color: var(--danger);
+}
+
+/* Both templates print validation messages as .error, which was not defined
+   anywhere in this file — every one of them has been rendering as unstyled
+   body text. Matches .form-error, which is the same thing under a name these
+   two pages do not use. */
+.auth-wrapper .error {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--danger); font-size: 12.5px; font-weight: 500;
+  margin-top: 6px;
+}
+.auth-wrapper .error::before {
+  content: "06a";           /* fa-circle-exclamation */
+  font-family: "Font Awesome 6 Free"; font-weight: 900; font-size: 11px;
+}
+
+/* Derive the tints from the token where the browser can, so a theme that
+   moves --danger moves these with it instead of leaving hardcoded #DC2626
+   washes behind a red that is no longer that red. */
+@supports (color: color-mix(in srgb, red, blue)) {
+  .auth-wrapper .form-control:required:focus:invalid {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 14%, transparent);
+  }
+  .auth-wrapper .form-control.is-invalid,
+  .auth-wrapper .form-control.is-invalid:focus {
+    background: color-mix(in srgb, var(--danger) 5%, var(--bg-white));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 18%, transparent);
+  }
+}
+
 /* Checkbox */
 .form-check { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 18px; }
 .form-check input[type=checkbox] {

@@ -65,22 +65,14 @@
     .exp-back i { font-size: 11px; }
 
     /* Empty-on-submit gets the same treatment as the trip planner's Trip
-       Details fields: a candy-red ring plus a short shake, so the eye lands
-       on the field that needs fixing. Beats :focus so the red survives the
-       pointer arriving on the input. */
+       Details fields: a candy-red ring, so the eye lands on the field that
+       needs fixing. Beats :focus so the red survives the pointer arriving on
+       the input. */
     .form-control.is-invalid,
     .form-control.is-invalid:focus {
         border-color: #FF3B3B;
         box-shadow: 0 0 0 3px rgba(255,59,59,0.20);
-        animation: exp-shake .48s cubic-bezier(.36,.07,.19,.97) both;
     }
-    @keyframes exp-shake {
-      10%,90%{transform:translateX(-2px);}
-      20%,80%{transform:translateX(3px);}
-      30%,50%,70%{transform:translateX(-6px);}
-      40%,60%{transform:translateX(6px);}
-    }
-    @media (prefers-reduced-motion:reduce){ .form-control.is-invalid { animation: none; } }
 
     /* ── Themed select ─────────────────────────────────────────
        A native <select> hands its option list to the browser/OS to
@@ -133,12 +125,10 @@
     .exp-select-option:focus-visible { background: var(--bg); outline: none; }
     .exp-select-option[aria-selected="true"] { color: var(--primary); background: var(--primary-light); }
     /* is-invalid / ocr-filled land on the hidden native <select>; the ring
-       and the shake belong on the visible trigger beside it. */
+       belongs on the visible trigger beside it. */
     .exp-select-native.is-invalid + .exp-select-trigger {
         border-color: #FF3B3B; box-shadow: 0 0 0 3px rgba(255,59,59,0.20);
-        animation: exp-shake .48s cubic-bezier(.36,.07,.19,.97) both;
     }
-    @media (prefers-reduced-motion:reduce){ .exp-select-native.is-invalid + .exp-select-trigger { animation: none; } }
     .exp-select-native.ocr-filled + .exp-select-trigger { border-color: var(--primary); background: var(--primary-light); }
 
     /* Upload prompt — matches the profile photo dropzone. These live in a
@@ -257,7 +247,7 @@
             {{-- novalidate: the fields keep their `required` attributes (checkValidity()
      still reads them, and the server validates regardless), but the browser's
      own bubble is suppressed. Without this the native UI blocked submission
-     outright and the submit event never fired, so the shake never ran. --}}
+     outright and the submit event never fired, so nothing was ever marked. --}}
 <form method="POST" action="{{ route('expenses.store') }}" enctype="multipart/form-data" id="expenseForm" novalidate>
                 @csrf
 
@@ -770,7 +760,7 @@
         return field.closest('.input-wrapper') || field;
     }
 
-    // The red ring + shake carry the message on their own; the extra
+    // The red ring carries the message on its own; the extra
     // "This field is required." line under every field was noise. Any
     // previously-inserted line is still cleaned up below.
     function showFieldError(field) {
@@ -812,7 +802,7 @@
             e.preventDefault();
             // A CSS animation only plays when the class lands, so pressing Save
             // again on a still-empty field would sit there doing nothing. Drop
-            // the class and re-add it next frame to replay the shake.
+            // the class and re-add it next frame so a repeat submit re-marks it.
             invalid.forEach(function (f) { f.classList.remove('is-invalid'); });
             requestAnimationFrame(function () {
                 invalid.forEach(function (f) { f.classList.add('is-invalid'); });

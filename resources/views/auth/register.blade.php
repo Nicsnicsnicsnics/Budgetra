@@ -9,7 +9,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ asset('css/style.css') }}">
+    {{-- Versioned like the app layouts: without it the browser serves whatever
+     copy of style.css it already had, and every change to this page's styling
+     needs a hard refresh before anyone sees it. --}}
+<link rel="stylesheet" href="{{ asset('css/style.css') }}?v={{ filemtime(public_path('css/style.css')) }}">
 </head>
 <body style="margin:0;padding:0;">
 
@@ -27,8 +30,7 @@
     {{-- Right panel --}}
     <div class="auth-panel-right">
         <div class="auth-form-wrap">
-            <h1 class="auth-title">Create an account</h1>
-            <p class="auth-subtitle">Join thousands of smart travelers managing their money.</p>
+            <h1 class="auth-title">Create an Account</h1>
 
             @if ($errors->any())
             <div class="alert alert-danger">
@@ -36,7 +38,7 @@
             </div>
             @endif
 
-            <form method="POST" action="{{ route('register') }}">
+            <form id="registerForm" method="POST" action="{{ route('register') }}">
                 @csrf
 
                 {{-- First Name --}}
@@ -47,7 +49,7 @@
                         <input id="first_name" type="text" name="first_name"
                                value="{{ old('first_name') }}"
                                class="form-control {{ $errors->has('first_name') ? 'is-invalid' : '' }}"
-                               placeholder="John" required autofocus>
+                               placeholder="" required autofocus>
                     </div>
                     @error('first_name')<div class="error">{{ $message }}</div>@enderror
                 </div>
@@ -60,7 +62,7 @@
                         <input id="last_name" type="text" name="last_name"
                                value="{{ old('last_name') }}"
                                class="form-control {{ $errors->has('last_name') ? 'is-invalid' : '' }}"
-                               placeholder="Doe" required>
+                               placeholder="" required>
                     </div>
                     @error('last_name')<div class="error">{{ $message }}</div>@enderror
                 </div>
@@ -73,7 +75,7 @@
                         <input id="email" type="email" name="email"
                                value="{{ old('email') }}"
                                class="form-control {{ $errors->has('email') ? 'is-invalid' : '' }}"
-                               placeholder="name@example.com" required>
+                               placeholder="" required>
                     </div>
                     @error('email')<div class="error">{{ $message }}</div>@enderror
                 </div>
@@ -85,7 +87,7 @@
                         <span class="input-icon"><i class="fa-solid fa-lock"></i></span>
                         <input id="password" type="password" name="password"
                                class="form-control {{ $errors->has('password') ? 'is-invalid' : '' }}"
-                               placeholder="••••••••" required>
+                               placeholder="" required>
                         <span class="input-suffix" id="togglePwd1" style="cursor:pointer;">
                             <i class="fa-regular fa-eye" id="eyeIcon1"></i>
                         </span>
@@ -99,7 +101,7 @@
                     <div class="input-wrapper">
                         <span class="input-icon"><i class="fa-solid fa-lock-open"></i></span>
                         <input id="password_confirmation" type="password" name="password_confirmation"
-                               class="form-control" placeholder="••••••••" required>
+                               class="form-control" placeholder="" required>
                         <span class="input-suffix" id="togglePwd2" style="cursor:pointer;">
                             <i class="fa-regular fa-eye" id="eyeIcon2"></i>
                         </span>
@@ -125,14 +127,14 @@
                                 onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'">
                             <option value="" disabled selected>Select your country</option>
                             @foreach([
-                                'Philippines' => '🇵🇭', 'Indonesia' => '🇮🇩', 'Thailand' => '🇹🇭', 'Vietnam' => '🇻🇳',
-                                'Malaysia' => '🇲🇾', 'Singapore' => '🇸🇬', 'Japan' => '🇯🇵', 'South Korea' => '🇰🇷',
-                                'China' => '🇨🇳', 'India' => '🇮🇳', 'Australia' => '🇦🇺', 'New Zealand' => '🇳🇿',
-                                'United States' => '🇺🇸', 'Canada' => '🇨🇦', 'United Kingdom' => '🇬🇧',
-                                'Germany' => '🇩🇪', 'France' => '🇫🇷', 'Italy' => '🇮🇹', 'Spain' => '🇪🇸',
-                                'Netherlands' => '🇳🇱', 'Brazil' => '🇧🇷', 'Mexico' => '🇲🇽', 'Argentina' => '🇦🇷',
-                                'Saudi Arabia' => '🇸🇦', 'United Arab Emirates' => '🇦🇪', 'Egypt' => '🇪🇬',
-                                'Nigeria' => '🇳🇬', 'South Africa' => '🇿🇦', 'Kenya' => '🇰🇪',
+                                'Philippines' => '', 'Indonesia' => '', 'Thailand' => '', 'Vietnam' => '',
+                                'Malaysia' => '', 'Singapore' => '', 'Japan' => '', 'South Korea' => '',
+                                'China' => '', 'India' => '', 'Australia' => '', 'New Zealand' => '',
+                                'United States' => '', 'Canada' => '', 'United Kingdom' => '',
+                                'Germany' => '', 'France' => '', 'Italy' => '', 'Spain' => '',
+                                'Netherlands' => '', 'Brazil' => '', 'Mexico' => '', 'Argentina' => '',
+                                'Saudi Arabia' => '', 'United Arab Emirates' => '', 'Egypt' => '',
+                                'Nigeria' => '', 'South Africa' => '', 'Kenya' => '',
                             ] as $name => $flag)
                                 <option value="{{ $name }}" {{ old('country') === $name ? 'selected' : '' }}>{{ $flag }} {{ $name }}</option>
                             @endforeach
@@ -166,6 +168,7 @@
     </div>
 </div>
 
+<script src="{{ asset('js/auth-form.js') }}?v={{ filemtime(public_path('js/auth-form.js')) }}"></script>
 <script>
 function togglePassword(inputId, iconId) {
     var pwd  = document.getElementById(inputId);
@@ -187,6 +190,7 @@ document.getElementById('togglePwd2').addEventListener('click', function () {
 document.getElementById('agreeTerms').addEventListener('change', function () {
     document.getElementById('createAccountBtn').disabled = !this.checked;
 });
+
 </script>
 
 </body>

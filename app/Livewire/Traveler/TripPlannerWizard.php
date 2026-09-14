@@ -40,7 +40,7 @@ class TripPlannerWizard extends Component
     public string $importCodeInput   = '';
     public string $importCodeError   = '';
 
-    // Sets the message and tells the browser to shake the field. Alpine also
+    // Sets the message and tells the browser to flag the field. Alpine also
     // handles the empty-input case on its own without a round trip; this
     // covers every rejection that can only be decided server-side.
     private function reject(string $message): void
@@ -66,7 +66,7 @@ class TripPlannerWizard extends Component
             return;
         }
         if ($sourceTrip->user_id === auth()->id()) {
-            // Used to bail silently. Now that every other rejection shakes the
+            // Used to bail silently. Now that every other rejection flags the
             // field, silence here would read as a dead button rather than a
             // refusal — and it's the traveler's own code, so saying so leaks
             // nothing.
@@ -825,7 +825,7 @@ class TripPlannerWizard extends Component
     {
         // Alpine already gates the obvious empties before this ever runs; this
         // stays as the backstop for anything the client and server disagree
-        // on, and shakes the same fields instead of opening a modal.
+        // on, and flags the same fields instead of opening a modal.
         $missing = [];
         if (trim($this->manualFrom) === '')                                  $missing[] = 'from';
         if (trim($this->manualTo) === '')                                    $missing[] = 'to';
@@ -841,7 +841,7 @@ class TripPlannerWizard extends Component
         if (strtolower(trim($this->manualFrom)) === strtolower(trim($this->manualTo))) {
             // addError() had nowhere to render — this view has no @error slot
             // anywhere, so clicking Next with matching cities used to do
-            // nothing at all. Shake the destination field instead.
+            // nothing at all. Flag the destination field instead.
             $this->dispatch('trip-details-missing', fields: ['to']);
             return;
         }
@@ -1833,7 +1833,7 @@ class TripPlannerWizard extends Component
         // server-side (see TripPlannerWizardTest::test_confirming_emergency_
         // fund_skips_the_modal_for_a_domestic_destination). The empty-FIELD
         // case the traveler sees is gated in Alpine's submit() on step 6,
-        // which shakes the field and never calls this method.
+        // which flags the field and never calls this method.
 
         if (!$this->emergencyConverted && $this->tripCurrency !== '' && $this->tripCurrency !== 'PHP' && $this->emergency > 0) {
             $rate = (new CurrencyConverterService())->rateToPhp($this->tripCurrency);

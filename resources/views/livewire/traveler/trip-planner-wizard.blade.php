@@ -29,15 +29,7 @@ $originCountryLabel = \App\Support\PlaceCatalog::originCountryFor(auth()->user()
    pointer landing on the field. The dropdown/calendar popovers are siblings
    of .pyt-field, not children, so the transform can't drag them along. */
 .pyt-field.is-bad,.pyt-field.is-bad:hover,.pyt-field.is-bad:focus-within{
-    border-color:#FF3B3B;box-shadow:0 0 0 3px rgba(255,59,59,.20);
-    animation:pyt-shake .48s cubic-bezier(.36,.07,.19,.97) both;}
-@keyframes pyt-shake{
-  10%,90%{transform:translateX(-2px);}
-  20%,80%{transform:translateX(3px);}
-  30%,50%,70%{transform:translateX(-6px);}
-  40%,60%{transform:translateX(6px);}
-}
-@media (prefers-reduced-motion:reduce){.pyt-field.is-bad{animation:none;}}
+    border-color:#FF3B3B;box-shadow:0 0 0 3px rgba(255,59,59,.20);}
 .pyt-icon{width:32px;height:32px;border-radius:9px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .pyt-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.7px;color:var(--muted);margin-bottom:8px;}
 .pyt-value{font-size:16px;font-weight:600;color:var(--dark);}
@@ -372,7 +364,7 @@ window.pytManual = function (seed) {
 
         flagBad(keys) {
             // Drop then re-set on the next frame, otherwise clicking Next a
-            // second time on an already-red field wouldn't restart the shake.
+            // second time on an already-red field wouldn't re-announce it.
             keys.forEach(k => this.bad[k] = false);
             requestAnimationFrame(() => keys.forEach(k => { if (k in this.bad) this.bad[k] = true; }));
         },
@@ -406,7 +398,7 @@ window.pytManual = function (seed) {
         submitTripDetails() {
             // Checked here rather than on the server: the answer is already
             // known client-side, and a Livewire round trip would put ~500ms
-            // between the click and the shake.
+            // between the click and the red.
             const missing = [];
             if (!this.fromLabel)     missing.push('from');
             if (!this.toLabel)       missing.push('to');
@@ -2337,9 +2329,7 @@ window.sortAttractions = function(dir) {
 /* Same required-but-empty treatment as the Trip Details fields. Beats
    :hover/:focus-within so the red survives the pointer landing on it. */
 .ef-field.is-bad,.ef-field.is-bad:hover,.ef-field.is-bad:focus-within{
-    border-color:#FF3B3B;box-shadow:0 0 0 3px rgba(255,59,59,.20);
-    animation:pyt-shake .48s cubic-bezier(.36,.07,.19,.97) both;}
-@media (prefers-reduced-motion:reduce){.ef-field.is-bad{animation:none;}}
+    border-color:#FF3B3B;box-shadow:0 0 0 3px rgba(255,59,59,.20);}
 .ef-clear{margin-left:auto;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:none;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:0;transition:background .15s,color .15s;}
 .ef-clear:hover{background:var(--border-light);color:var(--dark);}
 .ef-clear:focus-visible{outline:2px solid var(--primary);outline-offset:2px;}
@@ -2375,7 +2365,7 @@ window.sortAttractions = function(dir) {
             },
             flag() {
                 // Drop then re-set on the next frame, otherwise pressing Confirm
-                // again on an already-red field wouldn't restart the shake -- a
+                // again on an already-red field wouldn't re-announce it -- a
                 // CSS animation only plays when the class lands.
                 this.bad = false;
                 this.$nextTick(() => requestAnimationFrame(() => { this.bad = true; }));
@@ -3705,7 +3695,7 @@ window.sortAttractions = function(dir) {
 .mode-tag{font-size:11px;font-weight:600;color:#fff;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);backdrop-filter:blur(3px);border-radius:20px;padding:4px 11px;}
 .mode-cta{font-size:13px;font-weight:800;letter-spacing:0.4px;color:#fff;display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--primary);border-radius:12px;padding:13px 22px;width:100%;box-sizing:border-box;transition:background .2s,gap .2s;}
 .mode-card:hover .mode-cta{background:var(--primary-dark);gap:11px;}
-/* padding + clip so the shake's ±6px can never spill out and nudge the page
+/* padding + clip so a field's focus ring can never spill out and nudge the page
    into a horizontal scroll. clip (not hidden) keeps it from becoming a
    scroll container. */
 .mode-code{margin-top:26px;display:flex;flex-direction:column;align-items:center;gap:9px;padding-inline:12px;overflow-x:clip;}
@@ -3719,16 +3709,9 @@ window.sortAttractions = function(dir) {
 .mode-code-input::placeholder{text-transform:none;letter-spacing:.02em;font-weight:500;opacity:.7;}
 .mode-code-btn{border:none;border-radius:12px;padding:11px 20px;background:var(--primary);color:#fff;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .18s;}
 .mode-code-btn:hover{background:var(--primary-dark);}
-/* Rejected: candy-red ring plus a short shake. Driven by a class rather than
-   an inline style so re-adding it restarts the animation on a repeat click. */
-.mode-code-input.is-bad,.mode-code-input.is-bad:focus{border-color:#FF3B3B;box-shadow:0 0 0 3px rgba(255,59,59,.20);animation:mode-code-shake .48s cubic-bezier(.36,.07,.19,.97) both;}
-@keyframes mode-code-shake{
-  10%,90%{transform:translateX(-2px);}
-  20%,80%{transform:translateX(3px);}
-  30%,50%,70%{transform:translateX(-6px);}
-  40%,60%{transform:translateX(6px);}
-}
-@media (prefers-reduced-motion:reduce){.mode-code-input.is-bad{animation:none;}}
+/* Rejected: candy-red ring. Driven by a class rather than an inline style so
+   the state is one thing to set and clear. */
+.mode-code-input.is-bad,.mode-code-input.is-bad:focus{border-color:#FF3B3B;box-shadow:0 0 0 3px rgba(255,59,59,.20);}
 </style>
 <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 32px 20px;height:100%;box-sizing:border-box;position:relative;">
 
@@ -3788,7 +3771,7 @@ window.sortAttractions = function(dir) {
 
          An empty field is caught here in Alpine rather than on the server:
          the answer is already known client-side, and a Livewire round trip
-         to Supabase would put ~500ms between the click and the shake, which
+         to Supabase would put ~500ms between the click and the red, which
          reads as a dropped click rather than a rejection. Server-side
          rejections (unknown code) dispatch 'code-rejected' so they land on
          the same treatment. --}}

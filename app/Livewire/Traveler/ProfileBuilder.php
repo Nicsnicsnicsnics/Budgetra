@@ -116,15 +116,15 @@ class ProfileBuilder extends Component
 
     // Every step is checked for its own required field(s) before advancing.
     // Missing ones used to be listed in a modal; now their keys go back to the
-    // browser and the fields themselves shake with a red border, so the
+    // browser and the fields themselves take a red border, so the
     // traveler is looking at the thing that needs fixing.
     /**
      * Required-field keys still missing on the given step, in the same
-     * vocabulary the browser's shake handler expects.
+     * vocabulary the browser's field-flagging handler expects.
      *
      * Extracted from nextStep() so saveAndReturn() can run the identical
      * check — editing a single step from the Profile page never went through
-     * nextStep(), so a field cleared there used to save empty with no shake
+     * nextStep(), so a field cleared there used to save empty with no flag
      * and no complaint.
      */
     private function missingForStep(int $step): array
@@ -137,7 +137,7 @@ class ProfileBuilder extends Component
                 $missing[] = 'home';
             } elseif (is_numeric(preg_replace('/[\s,₱]/', '', $city))) {
                 // This one has a real @error slot under the field, so keep the
-                // message — just shake it too.
+                // message — just flag it too.
                 $this->addError('homeCity', 'Please enter a city name (e.g. "Manila"), not a number.');
                 $missing[] = 'home';
             }

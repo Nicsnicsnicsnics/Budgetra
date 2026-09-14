@@ -42,22 +42,10 @@
 .pb-clear{margin-left:auto;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:none;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:0;transition:background .15s,color .15s;}
 .pb-clear:hover{background:var(--border);color:var(--dark);}
 .pb-clear:focus-visible{outline:2px solid var(--primary);outline-offset:2px;}
+/* Required-but-empty on a Next Step. The ring carries it on its own — these
+   used to shake as well, which is gone everywhere in the app now. */
 .pb-input-wrap.is-bad,.pb-input-wrap.is-bad:focus-within{
-    border-color:#FF3B3B;box-shadow:0 0 0 3px rgba(255,59,59,.20);
-    animation:pb-shake .48s cubic-bezier(.36,.07,.19,.97) both;}
-/* Card pickers shake the cards themselves rather than their scroll container:
-   .int-scroll is overflow-x:auto and holds the absolutely-tracked side panel,
-   so transforming it would drag that along. */
-.int-card-img.is-bad{animation:pb-shake .48s cubic-bezier(.36,.07,.19,.97) both;}
-@keyframes pb-shake{
-  10%,90%{transform:translateX(-2px);}
-  20%,80%{transform:translateX(3px);}
-  30%,50%,70%{transform:translateX(-6px);}
-  40%,60%{transform:translateX(6px);}
-}
-@media (prefers-reduced-motion:reduce){
-  .pb-input-wrap.is-bad,.int-card-img.is-bad{animation:none;}
-}
+    border-color:#FF3B3B;box-shadow:0 0 0 3px rgba(255,59,59,.20);}
 .pb-input{border:none;background:transparent;font-size:14px;font-weight:700;color:var(--dark);outline:none;width:100%;}
 .pb-input::placeholder{color:var(--muted);font-weight:400;}
 .pb-suggest{font-size:12px;color:var(--muted);margin-top:8px;}
@@ -846,7 +834,7 @@
             clear() { PB_BAD_KEYS.forEach(k => this[k] = false); },
             flag(keys) {
                 // Drop then re-set on the next frame, otherwise clicking Next
-                // again on an already-red field wouldn't restart the shake.
+                // again on an already-red field wouldn't re-announce it.
                 this.clear();
                 requestAnimationFrame(() => (keys || []).forEach(k => {
                     if (PB_BAD_KEYS.includes(k)) this[k] = true;
