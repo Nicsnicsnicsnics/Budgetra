@@ -614,6 +614,36 @@ class ItineraryManagerTest extends TestCase
         $this->assertSame(3, $timeline[$dayThree->id]['day_number']);
     }
 
+    /**
+     * A moment can be dated anything — savePin() only validates 'date', not
+     * that it falls inside the trip. Counting from start_date is what gives a
+     * correct Day 4, but one logged before the trip began would read "Day 0"
+     * or "Day -8", which is why the numbering was once changed to rank the
+     * dates instead. Clamping keeps both: no gap collapses, nothing goes below 1.
+     */
+    public function test_a_moment_dated_before_the_trip_never_shows_a_zero_or_negative_day(): void
+    {
+        $user = User::factory()->create();
+        $trip = $this->makeTrip($user); // start_date = today
+
+        $dayBefore = Moment::create(['trip_id' => $trip->id, 'place_name' => 'Airport Hotel', 'visited_date' => now()->subDay()->toDateString(), 'lat' => 1, 'lng' => 1]);
+        $wayBefore = Moment::create(['trip_id' => $trip->id, 'place_name' => 'Packing', 'visited_date' => now()->subDays(8)->toDateString(), 'lat' => 2, 'lng' => 2]);
+        $dayTwo    = Moment::create(['trip_id' => $trip->id, 'place_name' => 'Beach', 'visited_date' => now()->addDay()->toDateString(), 'lat' => 3, 'lng' => 3]);
+
+        $component = Livewire::actingAs($user)
+            ->test(ItineraryManager::class, ['tab' => 'moments'])
+            ->call('selectTrip', $trip->id);
+
+        $timeline = collect($component->get('timelineMoments'))->keyBy('id');
+
+        $this->assertSame(1, $timeline[$dayBefore->id]['day_number']);
+        $this->assertSame(1, $timeline[$wayBefore->id]['day_number']);
+
+        // And an in-window moment still counts from the start, not from
+        // whichever moment happens to be earliest.
+        $this->assertSame(2, $timeline[$dayTwo->id]['day_number']);
+    }
+
     public function test_timeline_moments_ordered_by_visited_date(): void
     {
         $user    = User::factory()->create();

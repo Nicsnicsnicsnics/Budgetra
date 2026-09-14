@@ -526,9 +526,10 @@ class ItineraryManager extends Component
             ->orderBy('created_at')
             ->get();
 
-        // Numbered per trip — "Day N" only means anything within one trip.
+        // Numbered per trip — "Day N" only means anything within one trip, and
+        // each is measured from its own start_date.
         $dayNumbers = $moments->groupBy('trip_id')
-            ->map(fn ($tripMoments) => $this->dayNumbersFor($tripMoments));
+            ->map(fn ($tripMoments, $tripId) => $this->dayNumbersFor($tripMoments, $tripsById->get($tripId)));
 
         return $moments
             ->map(function (Moment $m) use ($tripsById, $dayNumbers) {
@@ -552,29 +553,47 @@ class ItineraryManager extends Component
 
     /**
      * Maps each distinct visited_date in a trip's moments to a day number,
-     * starting at 1 for the earliest.
+     * measured from the trip's own start_date and never below 1.
      *
-     * Day numbers used to be measured off the trip's start_date, which broke
-     * whenever a moment's date sat outside the planned window — the trip that
-     * starts 2026-08-17 with a moment logged for 2026-08-08 rendered a
-     * "Day -8" badge, and one logged the day before its trip began rendered
-     * "Day 0". Counting the trip's own recorded days instead keeps the first
-     * moment at Day 1 and can never produce a zero or negative label.
+     * Two earlier attempts each broke one half of this:
+     *
+     *   Counting from start_date alone put a moment dated before the trip at
+     *   "Day 0", or "Day -8" for one logged the week before — savePin()
+     *   validates 'date' only, so any date at all can be stored.
+     *
+     *   Ranking the dates that have moments instead (1st, 2nd, 3rd) could
+     *   never go negative, but collapsed the gaps: on a Mon-Thu trip with
+     *   nothing logged Tue or Wed, Thursday read "Day 2" rather than Day 4.
+     *
+     * Clamping the first keeps both properties — real spacing inside the trip,
+     * nothing below Day 1 outside it. Without a start_date there is nothing to
+     * measure from, so the old ranking still covers that case.
      *
      * @param  \Illuminate\Support\Collection<int, Moment>  $moments
      * @return array<string, int>  'Y-m-d' => day number
      */
-    private function dayNumbersFor($moments): array
+    private function dayNumbersFor($moments, ?Trip $trip = null): array
     {
-        return $moments
+        $dates = $moments
             ->pluck('visited_date')
             ->map(fn ($d) => $d->toDateString())
             ->unique()
             ->sort()
-            ->values()
-            ->flip()
-            ->map(fn ($i) => $i + 1)
-            ->all();
+            ->values();
+
+        if ($trip?->start_date) {
+            $start = \Illuminate\Support\Carbon::parse($trip->start_date)->startOfDay();
+
+            return $dates
+                ->mapWithKeys(fn (string $date) => [
+                    // diffInDays returns a float; day_number is rendered as a
+                    // badge and compared as an int everywhere else.
+                    $date => max(1, (int) $start->diffInDays(\Illuminate\Support\Carbon::parse($date)->startOfDay(), false) + 1),
+                ])
+                ->all();
+        }
+
+        return $dates->flip()->map(fn ($i) => $i + 1)->all();
     }
 
     public function getInitialPinsProperty(): array
@@ -606,7 +625,7 @@ class ItineraryManager extends Component
             ->orderBy('created_at')
             ->get();
 
-        $dayNumbers = $this->dayNumbersFor($moments);
+        $dayNumbers = $this->dayNumbersFor($moments, $this->selectedTrip);
 
         return $moments
             ->map(function (Moment $m) use ($dayNumbers) {
