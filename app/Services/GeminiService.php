@@ -46,7 +46,7 @@ class GeminiService
         $today = date('l, M j, Y');
 
         $prompt = <<<PROMPT
-You are a Philippine travel planner AI. Read the traveler's input, extract all details, then generate a realistic trip package. Return JSON only — no markdown, no explanation, no extra text.
+You are a travel planner AI. Read the traveler's input, extract all details, then generate a realistic trip package. Return JSON only — no markdown, no explanation, no extra text.
 
 Today's date is {$today}.
 
@@ -112,7 +112,7 @@ PROMPT;
     {
         $json = json_encode($package, JSON_UNESCAPED_UNICODE);
         $prompt = <<<PROMPT
-You are a Philippine travel expert. A trip package has been assembled from live search data for {$destination} ({$days} days, ₱{$budget} budget). Enrich and fix missing or placeholder values only — do NOT change costs or items that already look real.
+You are a travel expert. A trip package has been assembled from live search data for {$destination} ({$days} days, ₱{$budget} budget). Enrich and fix missing or placeholder values only — do NOT change costs or items that already look real.
 
 Current package JSON:
 {$json}

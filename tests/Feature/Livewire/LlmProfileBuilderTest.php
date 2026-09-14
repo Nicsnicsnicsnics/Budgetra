@@ -154,7 +154,7 @@ class LlmProfileBuilderTest extends TestCase
 
         // Still ASKS for the budget rather than assuming the peso figure is yen.
         // A Manila home city would have inherited it and moved on to travel style.
-        $this->assertStringContainsString('What is your preferred budget range?', $this->lastMessage($component));
+        $this->assertStringContainsString('How much do you usually budget for a trip?', $this->lastMessage($component));
         $component->assertSet('buildingProfile', true);
     }
 
@@ -169,7 +169,7 @@ class LlmProfileBuilderTest extends TestCase
         $this->say($component, 'help me set up my profile');
 
         $component->assertSet('buildingProfile', true);
-        $this->assertStringContainsString('What city do you usually travel from?', $this->lastMessage($component));
+        $this->assertStringContainsString('What city are you traveling from?', $this->lastMessage($component));
     }
 
     // Nothing may nag a traveller who only wants to plan a trip: profile mode
@@ -267,10 +267,10 @@ class LlmProfileBuilderTest extends TestCase
         $component = Livewire::actingAs($user)->test(Llm::class);
 
         $this->say($component, 'help me set up my profile');
-        $this->assertStringContainsString('What city do you usually travel from?', $this->lastMessage($component));
+        $this->assertStringContainsString('What city are you traveling from?', $this->lastMessage($component));
 
         $this->say($component, 'Manila');
-        $this->assertStringContainsString('What is your preferred budget range?', $this->lastMessage($component));
+        $this->assertStringContainsString('How much do you usually budget for a trip?', $this->lastMessage($component));
 
         $this->say($component, '25000');
         $this->assertStringContainsString('solo, or with a group', $this->lastMessage($component));
@@ -348,6 +348,22 @@ class LlmProfileBuilderTest extends TestCase
         // Beach plus a comfortable daily budget falls back to Resort.
         $this->assertSame('Resort', $profile->preferred_accommodation);
         $this->assertNotEmpty($profile->sub_interests);
+    }
+
+    public function test_a_beach_traveller_on_a_tight_budget_falls_back_to_hotel_not_resort(): void
+    {
+        Http::fake(['*' => Http::response([], 500)]);
+        $user = User::factory()->create(['country' => 'Philippines']);
+
+        $component = Livewire::actingAs($user)->test(Llm::class);
+        $this->say($component, 'help me set up my profile', 'Manila', '15000', 'solo', 'beach', 'yes');
+
+        $profile = UserProfile::where('user_id', $user->id)->first();
+        $this->assertNotNull($profile);
+        // Above the ₱10,000 floor but below twice it, so a resort is not a
+        // realistic suggestion — this is the branch that could never run while
+        // the threshold sat at ₱2,000, under the floor itself.
+        $this->assertSame('Hotel', $profile->preferred_accommodation);
     }
 
     public function test_an_auto_filled_choice_can_still_be_overridden_from_the_review(): void
@@ -465,7 +481,7 @@ class LlmProfileBuilderTest extends TestCase
         // Stored the way the form would have stored it, so a profile built in
         // chat and one built in the form read identically on the Profile page.
         $this->assertSame('Manila', $component->get('profileDraft')['home_city']);
-        $this->assertStringContainsString('What is your preferred budget range?', $this->lastMessage($component));
+        $this->assertStringContainsString('How much do you usually budget for a trip?', $this->lastMessage($component));
     }
 
     // Guards against the gate being drawn too tight: the catalogue is not just
@@ -479,7 +495,7 @@ class LlmProfileBuilderTest extends TestCase
         $this->say($component, 'help me set up my profile', 'Tokyo');
 
         $this->assertSame('Tokyo', $component->get('profileDraft')['home_city']);
-        $this->assertStringContainsString('What is your preferred budget range?', $this->lastMessage($component));
+        $this->assertStringContainsString('How much do you usually budget for a trip?', $this->lastMessage($component));
     }
 
     // The trip offer pre-fills the home city from the trip's origin, which
@@ -498,7 +514,7 @@ class LlmProfileBuilderTest extends TestCase
 
         $component->assertSet('buildingProfile', true);
         $this->assertSame('', $component->get('profileDraft')['home_city']);
-        $this->assertStringContainsString('What city do you usually travel from?', $this->lastMessage($component));
+        $this->assertStringContainsString('What city are you traveling from?', $this->lastMessage($component));
     }
 
     // The question itself carries no currency hint any more, but the figure is
@@ -513,7 +529,7 @@ class LlmProfileBuilderTest extends TestCase
         $this->say($component, 'help me set up my profile', 'Tokyo');
 
         // Asked plainly, with no "(per day, in ¥)" tacked on.
-        $this->assertStringContainsString('What is your preferred budget range?', $this->lastMessage($component));
+        $this->assertStringContainsString('How much do you usually budget for a trip?', $this->lastMessage($component));
         $this->assertStringNotContainsString('per day', $this->lastMessage($component));
 
         $this->say($component, '50000', 'solo', 'beach');
@@ -826,7 +842,7 @@ class LlmProfileBuilderTest extends TestCase
 
         // "from" on its own still means the home city, with nothing more specific.
         $this->say($component, 'Resort', 'change where I travel from');
-        $this->assertStringContainsString('What city do you usually travel from?', $this->lastMessage($component));
+        $this->assertStringContainsString('What city are you traveling from?', $this->lastMessage($component));
     }
 
     // The confirmation used to match "yes" at the front and save immediately,
@@ -841,7 +857,7 @@ class LlmProfileBuilderTest extends TestCase
 
         $this->say($component, 'yes but change my budget');
 
-        $this->assertStringContainsString('What is your preferred budget range?', $this->lastMessage($component));
+        $this->assertStringContainsString('How much do you usually budget for a trip?', $this->lastMessage($component));
         $this->assertNull(UserProfile::where('user_id', $user->id)->first(), 'nothing saved yet');
 
         // A plain acceptance must still save.
@@ -976,7 +992,7 @@ class LlmProfileBuilderTest extends TestCase
 
         $component = Livewire::actingAs($user)->test(Llm::class);
 
-        $this->assertStringContainsString("haven't set up a travel profile", $this->lastMessage($component));
+        $this->assertStringContainsString("set up your travel profile", $this->lastMessage($component));
     }
 
     public function test_a_bare_yes_starts_the_profile_conversation(): void
@@ -988,7 +1004,7 @@ class LlmProfileBuilderTest extends TestCase
         $this->say($component, 'yes');
 
         $component->assertSet('buildingProfile', true);
-        $this->assertStringContainsString('What city do you usually travel from?', $this->lastMessage($component));
+        $this->assertStringContainsString('What city are you traveling from?', $this->lastMessage($component));
     }
 
     // The exact bug that made this feature fail 45 tests on the first attempt:
@@ -1030,7 +1046,7 @@ class LlmProfileBuilderTest extends TestCase
 
         $component = Livewire::actingAs(User::find($user->id))->test(Llm::class);
 
-        $this->assertStringNotContainsString("haven't set up a travel profile", $this->allMessages($component));
+        $this->assertStringNotContainsString("set up your travel profile", $this->allMessages($component));
     }
 
     public function test_a_named_slot_can_be_changed_from_the_review(): void

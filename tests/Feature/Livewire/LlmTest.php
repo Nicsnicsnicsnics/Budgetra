@@ -7,6 +7,7 @@ use App\Models\AiConversationHistory;
 use App\Models\Trip;
 use App\Models\User;
 use App\Models\UserProfile;
+use App\Support\PlaceCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -54,9 +55,14 @@ class LlmTest extends TestCase
             'budget_min' => null, 'budget_max' => null, 'date_from' => null, 'date_to' => null,
         ], $overrides);
 
+        $body = json_encode($data);
+
         Http::fake([
-            'api.mistral.ai/*' => Http::response([
-                'choices' => [['message' => ['content' => json_encode($data)]]],
+            'api.mistral.ai/*' => Http::response(['choices' => [['message' => ['content' => $body]]]], 200),
+            'api.groq.com/*'   => Http::response(['choices' => [['message' => ['content' => $body]]]], 200),
+            'openrouter.ai/*'  => Http::response(['choices' => [['message' => ['content' => $body]]]], 200),
+            'generativelanguage.googleapis.com/*' => Http::response([
+                'candidates' => [['content' => ['parts' => [['text' => $body]]]]],
             ], 200),
         ]);
     }
@@ -738,7 +744,7 @@ class LlmTest extends TestCase
         $component->assertSet('aiDestinationChoices', ['Siargao', 'El Nido', 'Bohol']);
         $lastMessage = collect($component->get('messages'))->last()['text'];
         $this->assertStringContainsString('Siargao', $lastMessage);
-        $this->assertStringNotContainsString("didn't quite catch", $lastMessage);
+        $this->assertStringNotContainsString('catch the destination', $lastMessage);
     }
 
     public function test_answering_a_pending_edit_slot_applies_the_value(): void
@@ -837,7 +843,7 @@ class LlmTest extends TestCase
 
         $component->set('aiPrompt', 'xxxxxxxx')->call('automateTrip');
         $secondReply = collect($component->get('messages'))->last()['text'];
-        $this->assertStringContainsString("didn't quite catch", $secondReply);
+        $this->assertStringContainsString('catch the destination', $secondReply);
         $this->assertNotSame($firstReply, $secondReply);
 
         $component->assertSet('pendingEditSlot', 'destination');
@@ -1380,9 +1386,14 @@ class LlmTest extends TestCase
 
     private function fakeDestinationSuggestions(array $destinations): void
     {
+        $body = json_encode(['destinations' => $destinations]);
+
         Http::fake([
-            'api.mistral.ai/*' => Http::response([
-                'choices' => [['message' => ['content' => json_encode(['destinations' => $destinations])]]],
+            'api.mistral.ai/*' => Http::response(['choices' => [['message' => ['content' => $body]]]], 200),
+            'api.groq.com/*'   => Http::response(['choices' => [['message' => ['content' => $body]]]], 200),
+            'openrouter.ai/*'  => Http::response(['choices' => [['message' => ['content' => $body]]]], 200),
+            'generativelanguage.googleapis.com/*' => Http::response([
+                'candidates' => [['content' => ['parts' => [['text' => $body]]]]],
             ], 200),
         ]);
     }
@@ -1430,9 +1441,19 @@ class LlmTest extends TestCase
     public function test_single_recommendation_during_confirmation_updates_and_shows_summary(): void
     {
         $user = User::factory()->create();
+
         Http::fake([
             'api.mistral.ai/*' => Http::response([
                 'choices' => [['message' => ['content' => json_encode(['destination' => 'Bohol'])]]],
+            ], 200),
+            'api.groq.com/*' => Http::response([
+                'choices' => [['message' => ['content' => json_encode(['destination' => 'Bohol'])]]],
+            ], 200),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => json_encode(['destination' => 'Bohol'])]]],
+            ], 200),
+            'generativelanguage.googleapis.com/*' => Http::response([
+                'candidates' => [['content' => ['parts' => [['text' => json_encode(['destination' => 'Bohol'])]]]]],
             ], 200),
         ]);
 
@@ -1459,9 +1480,19 @@ class LlmTest extends TestCase
     public function test_declining_a_single_recommendation_during_confirmation_does_not_commit_it(): void
     {
         $user = User::factory()->create();
+
         Http::fake([
             'api.mistral.ai/*' => Http::response([
                 'choices' => [['message' => ['content' => json_encode(['destination' => 'Bohol'])]]],
+            ], 200),
+            'api.groq.com/*' => Http::response([
+                'choices' => [['message' => ['content' => json_encode(['destination' => 'Bohol'])]]],
+            ], 200),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => json_encode(['destination' => 'Bohol'])]]],
+            ], 200),
+            'generativelanguage.googleapis.com/*' => Http::response([
+                'candidates' => [['content' => ['parts' => [['text' => json_encode(['destination' => 'Bohol'])]]]]],
             ], 200),
         ]);
 
@@ -1527,6 +1558,63 @@ class LlmTest extends TestCase
         $component->set('aiPrompt', 'yes')->call('automateTrip');
 
         $component->assertSet('aiTo', 'Siargao');
+    }
+
+    private function fakeSuggestionWithHonestExtraction(string $destination): void
+    {
+        $respond = function ($request) use ($destination) {
+            $body = $request->body();
+
+            if (str_contains($body, 'an actual city, town, or island')) {
+                return Http::response(['choices' => [['message' => ['content' =>
+                    json_encode(['is_real_place' => false, 'name' => null, 'iata_code' => null]),
+                ]]]], 200);
+            }
+
+            if (str_contains($body, 'extracting structured information')) {
+                return Http::response(['choices' => [['message' => ['content' =>
+                    json_encode([
+                        'off_topic' => false, 'is_greeting' => false, 'is_inappropriate' => false,
+                        'origin' => null, 'destination' => null, 'travelers' => null,
+                        'budget_min' => null, 'budget_max' => null,
+                        'date_from' => null, 'date_to' => null,
+                    ]),
+                ]]]], 200);
+            }
+
+            return Http::response(['choices' => [['message' => ['content' =>
+                json_encode(['destination' => $destination]),
+            ]]]], 200);
+        };
+
+        Http::fake([
+            'api.mistral.ai/*' => $respond,
+            'api.groq.com/*'   => $respond,
+            'openrouter.ai/*'  => $respond,
+            'generativelanguage.googleapis.com/*' => Http::response([
+                'candidates' => [['content' => ['parts' => [['text' =>
+                    json_encode(['is_real_place' => false, 'name' => null, 'iata_code' => null]),
+                ]]]]],
+            ], 200),
+        ]);
+    }
+
+    public function test_casual_acceptances_commit_a_recommendation(): void
+    {
+        foreach (['Okay', 'ok', 'sounds good', 'alright', 'go ahead', 'perfect'] as $reply) {
+            $user = User::factory()->create();
+            $this->fakeSuggestionWithHonestExtraction('Siargao');
+
+            $component = Livewire::actingAs($user)->test(Llm::class)
+                ->set('aiPrompt', 'anywhere')->call('automateTrip');
+            $component->set('aiPrompt', $reply)->call('automateTrip');
+
+            $component->assertSet('aiTo', 'Siargao');
+
+            $lastMessage = collect($component->get('messages'))->last()['text'];
+            $this->assertStringNotContainsString('catch the destination', $lastMessage,
+                "Replying \"{$reply}\" to a suggestion should not re-ask for a destination.");
+        }
     }
 
     public function test_rejecting_a_recommendation_with_natural_phrasing_clears_it(): void
@@ -1596,7 +1684,7 @@ class LlmTest extends TestCase
         $component->assertSet('aiDestinationChoices', ['El Nido', 'Siargao', 'Boracay']);
         $lastMessage = collect($component->get('messages'))->last()['text'];
         $this->assertStringContainsString('El Nido', $lastMessage);
-        $this->assertStringNotContainsString("didn't quite catch", $lastMessage);
+        $this->assertStringNotContainsString('catch the destination', $lastMessage);
     }
 
     public function test_replying_other_to_a_multi_option_list_shows_fresh_alternatives(): void
@@ -1615,7 +1703,7 @@ class LlmTest extends TestCase
         $component->assertSet('aiDestinationChoices', ['Boracay', 'Coron', 'Palawan']);
         $lastMessage = collect($component->get('messages'))->last()['text'];
         $this->assertStringContainsString('Boracay', $lastMessage);
-        $this->assertStringNotContainsString("didn't quite catch", $lastMessage);
+        $this->assertStringNotContainsString('catch the destination', $lastMessage);
     }
 
     public function test_replying_other_when_regeneration_fails_gives_an_honest_message(): void
@@ -1638,7 +1726,7 @@ class LlmTest extends TestCase
 
         $lastMessage = collect($component->get('messages'))->last()['text'];
         $this->assertStringContainsString("couldn't come up with more alternatives", $lastMessage);
-        $this->assertStringNotContainsString("didn't quite catch", $lastMessage);
+        $this->assertStringNotContainsString('catch the destination', $lastMessage);
     }
 
     public function test_suggestDestination_includes_the_exclude_list_in_its_prompt(): void
@@ -1724,7 +1812,7 @@ class LlmTest extends TestCase
 
         $lastMessage = collect($component->get('messages'))->last()['text'];
         $this->assertStringContainsString("couldn't come up with a recommendation", $lastMessage);
-        $this->assertStringNotContainsString("didn't quite catch", $lastMessage);
+        $this->assertStringNotContainsString('catch the destination', $lastMessage);
     }
 
     public function test_international_request_on_a_too_low_budget_gets_an_explicit_shortfall_message(): void
@@ -2329,6 +2417,260 @@ class LlmTest extends TestCase
         $this->assertSame(75, $result['pct']);
     }
 
+    public function test_a_vague_request_is_rewritten_from_the_saved_profile(): void
+    {
+        $user = User::factory()->create();
+        UserProfile::create([
+            'user_id'       => $user->id,
+            'interests'     => ['Nature', 'Food Trip'],
+            'sub_interests' => ['Mountains', 'Waterfalls', 'Street Food'],
+        ]);
+        auth()->login(User::find($user->id));
+
+        $llm = new Llm();
+        $m = (new \ReflectionClass($llm))->getMethod('requestTextForSuggestion');
+        $m->setAccessible(true);
+
+        foreach (['anywhere', 'you pick', 'surprise me', 'somewhere', ''] as $vague) {
+            $this->assertSame(
+                'Somewhere that suits Mountains, Waterfalls, and Street Food',
+                $m->invoke($llm, $vague, ['Nature', 'Food Trip']),
+                "\"{$vague}\" should be rewritten from the profile.",
+            );
+        }
+
+        foreach (['a beach please', 'somewhere with mountains', 'Boracay'] as $specific) {
+            $this->assertSame($specific, $m->invoke($llm, $specific, ['Nature', 'Food Trip']));
+        }
+    }
+
+    public function test_the_rewrite_falls_back_to_top_level_interests_without_sub_interests(): void
+    {
+        $user = User::factory()->create();
+        UserProfile::create([
+            'user_id'   => $user->id,
+            'interests' => ['Nature', 'Food Trip'],
+        ]);
+        auth()->login(User::find($user->id));
+
+        $llm = new Llm();
+        $m = (new \ReflectionClass($llm))->getMethod('requestTextForSuggestion');
+        $m->setAccessible(true);
+
+        $this->assertSame(
+            'Somewhere that suits Nature and Food Trip',
+            $m->invoke($llm, 'anywhere', ['Nature', 'Food Trip']),
+        );
+
+        $this->assertSame('anywhere', $m->invoke($llm, 'anywhere', []));
+        $this->assertStringContainsString('no specific request', $m->invoke($llm, '', []));
+    }
+
+    public function test_both_suggestion_prompts_make_saved_interests_binding(): void
+    {
+        $user = User::factory()->create();
+        auth()->login($user);
+
+        $llm = new Llm();
+        $sent = [];
+
+        Http::fake(function ($request) use (&$sent) {
+            $sent[] = $request->body();
+            return Http::response(['choices' => [['message' => ['content' =>
+                json_encode(['destination' => 'Bohol', 'destinations' => ['Bohol', 'Baguio', 'Sagada']]),
+            ]]]], 200);
+        });
+
+        foreach (['suggestDestination', 'suggestDestinations'] as $name) {
+            $m = (new \ReflectionClass($llm))->getMethod($name);
+            $m->setAccessible(true);
+            $name === 'suggestDestination'
+                ? $m->invoke($llm, 'anywhere', [])
+                : $m->invoke($llm, 'anywhere', 3);
+        }
+
+        $suggestionPrompts = array_values(array_filter(
+            $sent,
+            fn ($body) => str_contains($body, "saved interests"),
+        ));
+
+        $this->assertCount(2, $suggestionPrompts,
+            'Expected one prompt from suggestDestination and one from suggestDestinations.');
+
+        foreach ($suggestionPrompts as $prompt) {
+            $this->assertStringNotContainsString('fallback only', $prompt,
+                'Saved interests must not be described as optional.');
+            $this->assertStringContainsString('REQUIRED', $prompt);
+            $this->assertStringContainsString('do not fall back to whichever', $prompt);
+        }
+    }
+
+    public function test_providers_that_answer_fastest_are_tried_first(): void
+    {
+        $order = (new \ReflectionClass(Llm::class))->getConstant('PROVIDER_ORDER');
+
+        $this->assertSame([
+            \App\Services\GroqService::class,
+            \App\Services\GeminiService::class,
+            \App\Services\MistralService::class,
+            \App\Services\OpenRouterService::class,
+        ], $order);
+    }
+
+    public function test_a_numeric_answer_does_not_make_the_next_question_apologise(): void
+    {
+        $user = User::factory()->create();
+
+        Http::fake(['*' => Http::response([], 500)]);
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('aiFrom', 'Manila')
+            ->set('aiTo', 'Boracay')
+            ->set('awaitingSlot', 'travelers')
+            ->set('aiPrompt', '2 people')
+            ->call('automateTrip');
+
+        $component->assertSet('aiTravelers', 2);
+        $reply = collect($component->get('messages'))->last()['text'];
+        $this->assertStringContainsString("What's your budget for this trip?", $reply);
+        $this->assertStringNotContainsString("didn't catch", $reply);
+        $this->assertStringNotContainsString("didn’t catch", $reply);
+
+        Http::fake(['*' => Http::response([], 500)]);
+        $component2 = Livewire::actingAs($user)->test(Llm::class)
+            ->set('aiFrom', 'Manila')
+            ->set('aiTo', 'Boracay')
+            ->set('aiTravelers', 2)
+            ->set('awaitingSlot', 'budget')
+            ->set('aiPrompt', '30000')
+            ->call('automateTrip');
+
+        $component2->assertSet('aiBudgetMax', 30000);
+        $reply2 = collect($component2->get('messages'))->last()['text'];
+        $this->assertStringContainsString('When are you planning to travel?', $reply2);
+        $this->assertStringNotContainsString('I still need your travel dates', $reply2);
+    }
+
+    public function test_relative_dates_are_understood_without_any_ai(): void
+    {
+        $user = User::factory()->create();
+
+        $cases = [
+            'next week'    => [strtotime('monday next week', strtotime('today')), 7],
+            'tomorrow'     => [strtotime('+1 day', strtotime('today')), 6],
+            'next month'   => [strtotime('first day of next month', strtotime('today')), 6],
+        ];
+
+        foreach ($cases as $phrase => [$expectedStart, $expectedDays]) {
+            Http::fake(['*' => Http::response([], 500)]);
+
+            $component = Livewire::actingAs($user)->test(Llm::class)
+                ->set('aiFrom', 'Manila')
+                ->set('aiTo', 'Boracay')
+                ->set('aiTravelers', 1)
+                ->set('aiBudgetMin', 30000)
+                ->set('aiBudgetMax', 30000)
+                ->set('awaitingSlot', 'dates')
+                ->set('aiPrompt', $phrase)
+                ->call('automateTrip');
+
+            $component->assertSet('aiDateFrom', date('M j', $expectedStart));
+            $component->assertSet('aiDays', $expectedDays);
+        }
+    }
+
+    public function test_this_weekend_is_the_coming_saturday_and_never_a_past_date(): void
+    {
+        $user = User::factory()->create();
+
+        $llm = new Llm();
+        auth()->login($user);
+
+        $method = (new \ReflectionClass($llm))->getMethod('parseDateRange');
+        $method->setAccessible(true);
+        $result = $method->invoke($llm, 'this weekend');
+
+        $this->assertNotNull($result);
+        $this->assertSame(2, $result['days']);
+
+        $start = strtotime($result['from'] . ' ' . date('Y'));
+        $this->assertGreaterThanOrEqual(strtotime('today'), $start,
+            '"this weekend" must never resolve to a date already gone.');
+        $this->assertSame('Sat', date('D', $start));
+    }
+
+    public function test_example_destination_stays_domestic_when_the_budget_cannot_reach_abroad(): void
+    {
+        $user = User::factory()->create();
+        auth()->login($user);
+
+        $llm = new Llm();
+        $llm->aiTravelers = 1;
+        $llm->aiDays      = 7;
+        $llm->aiBudgetMax = 20000;
+
+        $method = (new \ReflectionClass($llm))->getMethod('exampleDestination');
+        $method->setAccessible(true);
+
+        for ($i = 0; $i < 40; $i++) {
+            $this->assertContains($method->invoke($llm), PlaceCatalog::EXAMPLE_LOCAL);
+        }
+    }
+
+    public function test_example_destination_can_go_abroad_once_the_budget_clears_the_floor(): void
+    {
+        $user = User::factory()->create();
+        auth()->login($user);
+
+        $llm = new Llm();
+        $llm->aiTravelers = 1;
+        $llm->aiDays      = 7;
+        $llm->aiBudgetMax = 500000;
+
+        $method = (new \ReflectionClass($llm))->getMethod('exampleDestination');
+        $method->setAccessible(true);
+
+        $seen = [];
+        for ($i = 0; $i < 200; $i++) {
+            $seen[] = $method->invoke($llm);
+        }
+
+        $this->assertNotEmpty(array_intersect($seen, PlaceCatalog::EXAMPLE_INTERNATIONAL));
+        $this->assertEmpty(array_diff(
+            array_unique($seen),
+            array_merge(PlaceCatalog::EXAMPLE_LOCAL, PlaceCatalog::EXAMPLE_INTERNATIONAL),
+        ));
+    }
+
+    public function test_example_destination_is_domestic_when_no_budget_is_known_yet(): void
+    {
+        $user = User::factory()->create();
+        auth()->login($user);
+
+        $llm = new Llm();
+
+        $method = (new \ReflectionClass($llm))->getMethod('exampleDestination');
+        $method->setAccessible(true);
+
+        for ($i = 0; $i < 40; $i++) {
+            $this->assertContains($method->invoke($llm), PlaceCatalog::EXAMPLE_LOCAL);
+        }
+    }
+
+    public function test_every_example_destination_resolves_to_a_real_place(): void
+    {
+        $user = User::factory()->create();
+        auth()->login($user);
+
+        $llm = new Llm();
+        $method = (new \ReflectionClass($llm))->getMethod('knownPlaceName');
+        $method->setAccessible(true);
+
+        foreach (array_merge(PlaceCatalog::EXAMPLE_LOCAL, PlaceCatalog::EXAMPLE_INTERNATIONAL) as $place) {
+            $this->assertNotSame('', $method->invoke($llm, $place, 'destination'),
+                "TARA suggests \"{$place}\" but cannot resolve it.");
+        }
+    }
+
     public function test_generateAiPackage_uses_known_destination_data(): void
     {
         $user = User::factory()->create();
@@ -2352,7 +2694,8 @@ class LlmTest extends TestCase
         $this->assertSame('Discovery Shores Boracay', $package['accommodation']['name']);
         $this->assertSame(5, $package['accommodation']['stars']);
         $this->assertSame(15001, $package['accommodation']['cost']);
-        $this->assertSame('Aria at Discovery Shores (₱1,500)', $package['food']['name']);
+
+        $this->assertSame('Aria at Discovery Shores', $package['food']['name']);
         $this->assertSame(0, $package['attractions']['cost']);
         $this->assertCount(2, $package['attractions']['items']);
         $this->assertSame(9599, $package['food']['cost']);
@@ -2389,6 +2732,114 @@ class LlmTest extends TestCase
         $this->assertSame(300, $package['attractions']['cost']);
         $this->assertSame(15999, $package['total']);
         $this->assertSame(80, $package['pct']);
+    }
+
+    public function test_a_trimmed_section_drops_the_price_its_label_quoted(): void
+    {
+        $user = User::factory()->create();
+        auth()->login($user);
+
+        $llm = new Llm();
+        $llm->aiFrom      = 'Manila';
+        $llm->aiTo        = 'Boracay';
+        $llm->aiTravelers = 1;
+        $llm->aiDays      = 7;
+
+        $package = [
+            'transport'     => ['cost' => 5000],
+            'accommodation' => ['cost' => 5000],
+            'food'          => ['name' => 'Aria at Discovery Shores (₱1,500)', 'cost' => 10500],
+            'attractions'   => ['items' => [], 'cost' => 0],
+        ];
+
+        $method = (new \ReflectionClass($llm))->getMethod('capPackageToBudget');
+        $method->setAccessible(true);
+        $result = $method->invoke($llm, $package, 18000);
+
+        $this->assertSame(8000, $result['food']['cost']);
+        $this->assertSame('Aria at Discovery Shores', $result['food']['name']);
+        $this->assertSame(18000, $result['total']);
+    }
+
+    public function test_an_untrimmed_section_keeps_the_price_in_its_label(): void
+    {
+        $user = User::factory()->create();
+        auth()->login($user);
+
+        $llm = new Llm();
+        $llm->aiFrom      = 'Manila';
+        $llm->aiTo        = 'Boracay';
+        $llm->aiTravelers = 1;
+        $llm->aiDays      = 7;
+
+        $package = [
+            'transport'     => ['cost' => 3000],
+            'accommodation' => ['cost' => 3000],
+            'food'          => ['name' => 'Aria at Discovery Shores (₱1,500)', 'cost' => 4000],
+            'attractions'   => ['items' => [], 'cost' => 0],
+        ];
+
+        $method = (new \ReflectionClass($llm))->getMethod('capPackageToBudget');
+        $method->setAccessible(true);
+        $result = $method->invoke($llm, $package, 50000);
+
+        $this->assertSame(4000, $result['food']['cost']);
+        $this->assertSame('Aria at Discovery Shores (₱1,500)', $result['food']['name']);
+    }
+
+    public function test_capPackageToBudget_trims_a_domestic_room_to_the_floor_the_budget_gate_assumed(): void
+    {
+        $user = User::factory()->create();
+        auth()->login($user);
+
+        $llm = new Llm();
+        $llm->aiFrom      = 'Manila';
+        $llm->aiTo        = 'Boracay';
+        $llm->aiTravelers = 1;
+        $llm->aiDays      = 4;
+
+        $package = [
+            'transport'     => ['cost' => 3000],
+            'accommodation' => ['cost' => 3200],
+            'food'          => ['cost' => 1200],
+            'attractions'   => ['items' => [], 'cost' => 0],
+        ];
+
+        $method = (new \ReflectionClass($llm))->getMethod('capPackageToBudget');
+        $method->setAccessible(true);
+        $result = $method->invoke($llm, $package, 6300);
+
+        $this->assertSame(2100, $result['accommodation']['cost']);
+        $this->assertSame(6300, $result['total']);
+        $this->assertSame(3000, $result['transport']['cost']);
+        $this->assertSame(100, $result['pct']);
+    }
+
+    public function test_capPackageToBudget_never_trims_an_international_room_below_the_international_floor(): void
+    {
+        $user = User::factory()->create();
+        auth()->login($user);
+
+        $llm = new Llm();
+        $llm->aiFrom      = 'Manila';
+        $llm->aiTo        = 'Tokyo';
+        $llm->aiTravelers = 1;
+        $llm->aiDays      = 3;
+
+        $package = [
+            'transport'     => ['cost' => 20000],
+            'accommodation' => ['cost' => 6000],
+            'food'          => ['cost' => 900],
+            'attractions'   => ['items' => [], 'cost' => 0],
+        ];
+
+        $method = (new \ReflectionClass($llm))->getMethod('capPackageToBudget');
+        $method->setAccessible(true);
+        $result = $method->invoke($llm, $package, 20000);
+
+        $this->assertSame(4500, $result['accommodation']['cost']);
+        $this->assertSame(14600, $result['transport']['cost']);
+        $this->assertSame(20000, $result['total']);
     }
 
     public function test_mount_offers_saved_preferences_when_profile_has_origin_and_budget(): void
@@ -2445,7 +2896,7 @@ class LlmTest extends TestCase
         $component->assertSet('pendingProfileOffer', false);
 
         $lastMessage = collect($component->get('messages'))->last()['text'];
-        $this->assertStringContainsString("haven't set up a travel profile", $lastMessage);
+        $this->assertStringContainsString("set up your travel profile", $lastMessage);
     }
 
     public function test_mount_does_not_offer_when_only_interests_are_saved(): void

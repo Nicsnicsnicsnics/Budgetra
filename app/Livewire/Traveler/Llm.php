@@ -212,6 +212,7 @@ class Llm extends Component
             'origin'               => trim($this->aiFrom),
             'start_date'           => $this->aiDateFrom,
             'end_date'             => $endDate,
+
             'budget_limit'         => $this->aiBudgetMax ?: $this->aiBudgetMin,
             'budget_currency'      => $this->aiBudgetLocal !== null ? $this->aiCurrency : null,
             'budget_local'         => $this->aiBudgetLocal,
@@ -281,7 +282,7 @@ class Llm extends Component
             $this->pendingProfileOffer = false;
             $trimmedReply = trim($userText);
 
-            if (preg_match('/^(?:yes|yeah|yep|yup|correct|right|sure|thats right|that\'s right)\b/i', $trimmedReply)) {
+            if (preg_match(self::ACCEPTANCE_PATTERN, $trimmedReply)) {
                 $this->applyProfileToTrip(auth()->user()?->userProfile);
 
                 $this->aiPrompt = '';
@@ -356,7 +357,7 @@ class Llm extends Component
             $this->pendingPlaceSuggestionSlot = null;
             $trimmedReply = trim($userText);
 
-            if (preg_match('/^(?:yes|yeah|yep|yup|correct|right|sure|thats right|that\'s right)\b/i', $trimmedReply)) {
+            if (preg_match(self::ACCEPTANCE_PATTERN, $trimmedReply)) {
                 if ($suggestionSlot === 'destination' && $this->aiTo === '') {
                     $this->aiTo = $suggestion;
                 } elseif ($suggestionSlot === 'origin' && $this->aiFrom === '') {
@@ -697,9 +698,12 @@ class Llm extends Component
             $isTangentQuestion = $this->looksLikeQuestion($userText)
                 && !$this->looksLikeAttempt($stillMissing, $userText);
 
+            $answeredThePendingSlot = $previouslyAwaiting !== '' && $stillMissing !== $previouslyAwaiting;
+
             $this->missCount = match (true) {
                 $isTangentQuestion => 0,
                 $stillMissing === $previouslyAwaiting => $this->missCount + 1,
+                $answeredThePendingSlot => 0,
                 $this->looksLikeAttempt($stillMissing, $userText) => 1,
                 default => 0,
             };
@@ -810,6 +814,11 @@ class Llm extends Component
         $this->profileDraft    = $this->pfBlankDraft();
     }
 
+    private const ACCEPTANCE_PATTERN =
+        '/^(?:yes|yeah|yep|yup|sure|ok|okay|okey|k|alright|alrighty|fine|cool|great|nice'
+        . '|perfect|correct|right|good|deal|sounds (?:good|great|nice)|that works|works for me'
+        . '|let\'?s go|go ahead|go for it|thats right|that\'s right)\b/i';
+
     private const NON_ANSWER_FILLERS = [
         'hi', 'hello', 'hey', 'yo', 'sup', 'hiya',
         'good morning', 'good afternoon', 'good evening', 'good day',
@@ -824,7 +833,7 @@ class Llm extends Component
     private const PROFANITY_REPLY = "Let's keep things friendly here 🙂 — I'm happy to help plan your trip, just let me know your destination, budget, and dates without the language.";
 
     private const PROVIDER_ORDER = [
-        MistralService::class, OpenRouterService::class, GroqService::class, GeminiService::class,
+        GroqService::class, GeminiService::class, MistralService::class, OpenRouterService::class,
     ];
 
     private function tryProviders(\Closure $invoke): mixed
@@ -852,6 +861,29 @@ class Llm extends Component
         return is_array($data) ? $data : null;
     }
 
+    private function requestTextForSuggestion(string $userText, array $interests): string
+    {
+        $text = trim($userText);
+
+        $subInterests = (array) (auth()->user()?->userProfile?->sub_interests ?? []);
+        $interests    = !empty($subInterests) ? $subInterests : $interests;
+
+        $isVague = $text === '' || (bool) preg_match(
+            '/^(?:anywhere|any\s*where|anything|any\s*place|somewhere|some\s*place|'
+            . 'you\s*(?:pick|choose|decide)|surprise\s*me|up\s*to\s*you|your\s*(?:pick|choice)|'
+            . 'whatever|idk|i\s*don\'?t\s*know|not\s*sure|no\s*idea|dunno|'
+            . '(?:recommend|suggest)(?:\s*me)?(?:\s*something)?)'
+            . '(?:\s+(?:please|po|na|lang|thanks|thank\s*you))*[.!?]*$/i',
+            $text
+        );
+
+        if (!$isVague || empty($interests)) {
+            return $text !== '' ? $text : '(no specific request — just pick something)';
+        }
+
+        return 'Somewhere that suits ' . $this->joinNaturally($interests);
+    }
+
     private function suggestDestination(string $userText = '', array $exclude = []): string
     {
         set_time_limit(90);
@@ -860,32 +892,55 @@ class Llm extends Component
         $interestText = !empty($interests)
             ? implode(', ', $interests)
             : 'general sightseeing, popular beaches, and well-rounded trips';
-        $requestText = trim($userText) !== '' ? trim($userText) : '(no specific request — just pick something)';
+        $requestText = $this->requestTextForSuggestion($userText, $interests);
         $excludeText = !empty($exclude)
             ? "\n\nDo NOT suggest any of these — the traveler already turned them down: " . implode(', ', $exclude) . '.'
             : '';
 
+        $origin = trim($this->aiFrom);
+        if ($origin !== '') {
+            $excludeText .= "\n\nThe traveler is departing FROM {$origin}, so never suggest {$origin} itself.";
+        }
+
         $prompt = <<<PROMPT
-        You are a Philippine travel assistant. A traveler doesn't know where to go and wants a recommendation.
+        You are a travel assistant. A traveler doesn't know where to go and wants a recommendation. Philippine and international destinations are equally valid — pick on merit, not on which is more famous.
 
         Traveler's message: "{$requestText}"
-        Traveler's saved interests (fallback only, use these if the message above states no specific preference of its own): {$interestText}
+        Traveler's saved interests (REQUIRED — the destination must suit at least one of these, unless the message above names a different preference, which always wins): {$interestText}
 
-        Suggest exactly ONE real, specific travel destination (a city or island, not a country). If the traveler's message names a preference — weather, scenery (beach/mountain/nature), who it's for (couples/family/photographers/first-time travelers), a vibe (hidden gem, food, nightlife), or anything similar — the destination MUST match that preference first, ahead of the saved interests. It can be in the Philippines or an international destination.{$this->budgetContextForPrompt()}{$excludeText}
+        Suggest exactly ONE real, specific travel destination (a city or island, not a country). If the traveler's message names a preference — weather, scenery (beach/mountain/nature), who it's for (couples/family/photographers/first-time travelers), a vibe (hidden gem, food, nightlife), or anything similar — the destination MUST match that preference first, ahead of the saved interests. When the message names NO preference of its own (e.g. "anywhere", "you pick", "somewhere nice"), the saved interests above decide the answer — do not fall back to whichever destination is most famous. It can be in the Philippines or an international destination.{$this->budgetContextForPrompt()}{$excludeText}
 
         Return JSON only, no markdown:
         {"destination": "city name"}
         PROMPT;
 
-        $raw  = $this->tryProviders(fn ($provider) => $provider->generate($prompt));
-        $data = $this->decodeAiJson($raw);
-        if ($data === null || empty($data['destination'])) return '';
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $raw  = $this->tryProviders(fn ($provider) => $provider->generate($prompt));
+            $data = $this->decodeAiJson($raw);
+            if ($data === null || empty($data['destination'])) continue;
 
-        $resolved = $this->knownPlaceName($this->cleanCityName($data['destination']));
+            $pendingBefore     = $this->pendingPlaceSuggestion;
+            $pendingSlotBefore = $this->pendingPlaceSuggestionSlot;
 
-        if ($resolved !== '' && in_array($resolved, $exclude, true)) return '';
+            $resolved = $this->knownPlaceName($this->cleanCityName($data['destination']));
 
-        return $resolved;
+            if ($this->pendingPlaceSuggestion !== $pendingBefore) {
+                $nearMiss = $this->pendingPlaceSuggestion;
+                $this->pendingPlaceSuggestion     = $pendingBefore;
+                $this->pendingPlaceSuggestionSlot = $pendingSlotBefore;
+
+                if ($resolved === '' && $nearMiss !== null) {
+                    $resolved = $nearMiss;
+                }
+            }
+
+            if ($resolved === '') continue;
+            if ($origin !== '' && strcasecmp($resolved, $origin) === 0) continue;
+
+            if (!in_array($resolved, $exclude, true)) return $resolved;
+        }
+
+        return '';
     }
 
     private function parseOptionsCount(string $text): ?int
@@ -911,15 +966,15 @@ class Llm extends Component
         $interestText = !empty($interests)
             ? implode(', ', $interests)
             : 'general sightseeing, popular beaches, and well-rounded trips';
-        $requestText = trim($userText) !== '' ? trim($userText) : '(no specific request — just pick some)';
+        $requestText = $this->requestTextForSuggestion($userText, $interests);
 
         $prompt = <<<PROMPT
-        You are a Philippine travel assistant. A traveler wants several destination options to choose from, not just one.
+        You are a travel assistant. A traveler wants several destination options to choose from, not just one. Philippine and international destinations are equally valid — pick on merit, not on which is more famous.
 
         Traveler's message: "{$requestText}"
-        Traveler's saved interests (fallback only, use these if the message above states no specific preference of its own): {$interestText}
+        Traveler's saved interests (REQUIRED — the destination must suit at least one of these, unless the message above names a different preference, which always wins): {$interestText}
 
-        Suggest exactly {$count} real, specific, DIFFERENT travel destinations (cities or islands, not countries) that best match what the traveler asked for. If the message names a preference — weather, scenery, who it's for, a vibe, or anything similar — every destination MUST match it. They can be in the Philippines or international. No duplicates.{$this->budgetContextForPrompt()}
+        Suggest exactly {$count} real, specific, DIFFERENT travel destinations (cities or islands, not countries) that best match what the traveler asked for. If the message names a preference — weather, scenery, who it's for, a vibe, or anything similar — every destination MUST match it. When the message names NO preference of its own, every destination must suit the saved interests above — do not fall back to whichever destinations are most famous. They can be in the Philippines or international. No duplicates.{$this->budgetContextForPrompt()}
 
         Return JSON only, no markdown:
         {"destinations": ["city name", "city name"]}
@@ -1346,12 +1401,24 @@ PROMPT;
         return null;
     }
 
+    private function exampleDestination(): string
+    {
+        $pool   = PlaceCatalog::EXAMPLE_LOCAL;
+        $budget = $this->aiBudgetMax ?: $this->aiBudgetMin;
+
+        if ($budget > 0 && $budget >= $this->internationalFloor()) {
+            $pool = array_merge($pool, PlaceCatalog::EXAMPLE_INTERNATIONAL);
+        }
+
+        return $pool[array_rand($pool)];
+    }
+
     private function questionFor(string $slot, int $missCount): string
     {
         if ($missCount <= 0) {
             return match ($slot) {
                 'destination' => "Sure! Where would you like to go?",
-                'origin'      => "Nice choice! Where will you be traveling from?",
+                'origin'      => "Nice! What city are you traveling from?",
                 'travelers'   => "Got it. How many people are traveling?",
                 'budget'      => "Got it. What's your budget for this trip?",
                 'dates'       => "Got it. When are you planning to travel? (e.g. \"August 3 to 10\")",
@@ -1361,17 +1428,17 @@ PROMPT;
 
         if ($missCount === 1) {
             return match ($slot) {
-                'destination' => "Sorry, I didn't quite catch a destination there — which place would you like to go to?",
-                'origin'      => "Hmm, I still need a starting point — what city will you be flying from?",
-                'travelers'   => "I didn't catch a number — how many people are going, e.g. \"2\" or \"solo\"?",
-                'budget'      => "I didn't catch a number — roughly how much do you want to spend, e.g. \"20000\" or \"20k\"?",
-                'dates'       => "I still need actual travel dates — something like \"August 3 to 10\" or \"8/3/2026\" works best.",
+                'destination' => "Sorry, I didn’t catch the destination. Where would you like to go?",
+                'origin'      => "Hmm, I still need a starting point. What city will you be flying from?",
+                'travelers'   => "I didn’t catch the number of travelers. How many people are going? For example: “2” or “solo”.",
+                'budget'      => "I didn’t catch the budget amount. Roughly how much do you want to spend?",
+                'dates'       => "I still need your travel dates. When are you planning to travel?",
                 default       => '',
             };
         }
 
         return match ($slot) {
-            'destination' => "Let's try just the place name by itself — for example: Boracay",
+            'destination' => "Let's try just the place name by itself — for example: " . $this->exampleDestination(),
             'origin'      => "Just the city name works — for example: Manila",
             'travelers'   => "Just a plain number works — for example: 2",
             'budget'      => "Just a plain number works — for example: 20000",
@@ -1421,6 +1488,7 @@ PROMPT;
     }
 
     #[On('ai-process-trip')]
+
     public function processAiTrip(): void
     {
         set_time_limit(450);
@@ -1692,6 +1760,8 @@ PROMPT;
 
     private const MINIMUM_TOTAL_BUDGET = 10000;
 
+    private const RESORT_BUDGET_HINT = self::MINIMUM_TOTAL_BUDGET * 2;
+
     private const DOMESTIC_FLIGHT_FLOOR = 3000;
 
     private const DOMESTIC_ROOM_FLOOR   = 500;
@@ -1699,8 +1769,12 @@ PROMPT;
     private const DOMESTIC_LIVING_FLOOR = 500;
 
     private const MIN_FOOD_PER_DAY_PER_TRAVELER = 300;
-    private const MIN_ACCOMMODATION_PER_NIGHT   = 800;
     private const MIN_TRANSPORT_RATIO           = 0.7;
+
+    private function stripStalePrice(string $name): string
+    {
+        return trim(preg_replace('/\s*\([^()]*₱[^()]*\)/u', '', $name));
+    }
 
     private function capPackageToBudget(array $package, int $budget): array
     {
@@ -1749,13 +1823,26 @@ PROMPT;
             $reduceBy = min($total - $budget, max(0, $food['cost'] - $floor));
             $food['cost'] -= $reduceBy;
             $total        -= $reduceBy;
+
+            if ($reduceBy > 0 && isset($food['name'])) {
+                $food['name'] = $this->stripStalePrice($food['name']);
+            }
         }
 
         if ($total > $budget && $accommodation['cost'] > 0) {
-            $floor    = self::MIN_ACCOMMODATION_PER_NIGHT * $days;
+
+            $roomFloor = $this->isInternationalDestination($this->aiTo)
+                ? self::INTERNATIONAL_ROOM_FLOOR
+                : self::DOMESTIC_ROOM_FLOOR;
+
+            $floor    = $roomFloor * $days;
             $reduceBy = min($total - $budget, max(0, $accommodation['cost'] - $floor));
             $accommodation['cost'] -= $reduceBy;
             $total                 -= $reduceBy;
+
+            if ($reduceBy > 0 && isset($accommodation['name'])) {
+                $accommodation['name'] = $this->stripStalePrice($accommodation['name']);
+            }
         }
 
         if ($total > $budget && $transport['cost'] > 0) {
@@ -1763,6 +1850,10 @@ PROMPT;
             $reduceBy = min($total - $budget, max(0, $transport['cost'] - $floor));
             $transport['cost'] -= $reduceBy;
             $total             -= $reduceBy;
+
+            if ($reduceBy > 0 && isset($transport['name'])) {
+                $transport['name'] = $this->stripStalePrice($transport['name']);
+            }
         }
 
         return array_merge($package, [
@@ -1963,8 +2054,35 @@ PROMPT;
 
     private const MAX_BUDGET = 10_000_000;
 
+    private function comingSaturday(int $from): int
+    {
+        return (int) date('N', $from) === 6 ? $from : strtotime('next saturday', $from);
+    }
+
     private function parseDateRange(string $text): ?array
     {
+
+        if (preg_match('/\b(next week|this weekend|next weekend|tomorrow|next month|today)\b/i', $text, $m)) {
+            $phrase = strtolower($m[1]);
+            $today  = strtotime('today');
+
+            [$startTs, $days] = match ($phrase) {
+                'next week'    => [strtotime('monday next week', $today), 7],
+                'this weekend' => [$this->comingSaturday($today), 2],
+                'next weekend' => [strtotime('+7 days', $this->comingSaturday($today)), 2],
+                'tomorrow'     => [strtotime('+1 day', $today), 6],
+                'today'        => [$today, 6],
+                'next month'   => [strtotime('first day of next month', $today), 6],
+            };
+
+            return [
+                'from'      => date('M j', $startTs),
+                'to'        => date('M j, Y', $startTs + ($days - 1) * 86400),
+                'days'      => $days,
+                'remainder' => str_replace($m[0], '', $text),
+            ];
+        }
+
         $monthMap = [
             'january'=>1,'february'=>2,'march'=>3,'april'=>4,'may'=>5,'june'=>6,
             'july'=>7,'august'=>8,'september'=>9,'october'=>10,'november'=>11,'december'=>12,

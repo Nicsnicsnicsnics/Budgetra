@@ -138,9 +138,7 @@ trait BuildsProfile
         $this->profileDraft['arrival_offer_pending'] = true;
 
         $this->messages[] = ['role' => 'assistant', 'text' =>
-            "You haven't set up a travel profile yet — want me to set it up for you? "
-            . "It's four quick questions, and it saves me asking about your budget and "
-            . "starting point every time. Say \"yes\", or just tell me about your trip."];
+            "You haven't set up your travel profile yet. Would you like to set it up?"];
     }
 
     private function offerProfileFromTripIfNone(): void
@@ -243,9 +241,13 @@ trait BuildsProfile
     private function pfQuestionFor(string $slot): string
     {
         return match ($slot) {
-            'home_city' => "What city do you usually travel from?",
+            'home_city' => "What city are you traveling from?",
 
-            'daily_budget' => "What is your preferred budget range?",
+            // The column is named daily_budget for historical reasons, but every
+            // reader treats it as the whole-trip figure — it becomes aiBudgetMax
+            // directly and is checked against MINIMUM_TOTAL_BUDGET. The question
+            // says so plainly rather than leaving the traveller to guess.
+            'daily_budget' => "How much do you usually budget for a trip?",
 
             'travel_style' => "Do you usually travel solo, or with a group?",
 
@@ -385,7 +387,7 @@ trait BuildsProfile
 
     private function pfFallbackAccommodation(): string
     {
-        $indulgent = (float) $this->profileDraft['daily_budget'] >= 2000
+        $indulgent = (float) $this->profileDraft['daily_budget'] >= self::RESORT_BUDGET_HINT
             && (in_array('Beach', $this->profileDraft['interests'], true)
                 || in_array('Relaxation', $this->profileDraft['interests'], true));
 

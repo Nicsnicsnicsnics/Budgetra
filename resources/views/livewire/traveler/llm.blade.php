@@ -509,5 +509,13 @@ window.budgetraGroupBareNumber = function (el) {
         }
     }
     el.setSelectionRange(pos, pos);
+
+    // Setting el.value in script does not notify Livewire, so wire:model kept
+    // the raw keystrokes: the box showed "30,000" while the message actually
+    // sent was "3,0000". Re-dispatching input hands it the corrected value.
+    //
+    // This handler is itself bound to input, so this re-enters exactly once —
+    // the second pass finds grouped === body and returns at the guard above.
+    el.dispatchEvent(new Event('input', { bubbles: true }));
 };
 </script>

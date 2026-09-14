@@ -45,6 +45,16 @@ final class PlaceCatalog
         'laoag' => 'LAO',
         'vigan' => 'VIG',
         'baguio' => 'BAG',
+
+        // Mountain destinations reached overland, so the code is the airport
+        // travellers actually fly into before the bus leg — the same treatment
+        // Baguio's package data already gives (code MNL, "Bus from Pasay").
+        // Added because a Nature / Mountains profile draws exactly these, and
+        // an unresolvable name throws the whole recommendation away.
+        'banaue' => 'MNL', 'batad' => 'MNL', 'ifugao' => 'MNL',
+        'sagada' => 'MNL', 'mountain province' => 'MNL',
+        'baler'  => 'MNL', 'la union' => 'MNL', 'san juan la union' => 'MNL',
+
         'legazpi' => 'LGP', 'legazpi city' => 'LGP',
         'naga' => 'WNP', 'naga city' => 'WNP',
         'roxas' => 'RXS', 'roxas city' => 'RXS',
@@ -263,6 +273,9 @@ final class PlaceCatalog
         'zamboanga city' => 'Philippines', 'cagayan de oro' => 'Philippines',
         'cagayan' => 'Philippines', 'general santos' => 'Philippines',
         'tagaytay' => 'Philippines', 'baguio' => 'Philippines', 'vigan' => 'Philippines',
+        'banaue' => 'Philippines', 'batad' => 'Philippines', 'ifugao' => 'Philippines',
+        'sagada' => 'Philippines', 'mountain province' => 'Philippines',
+        'baler' => 'Philippines', 'la union' => 'Philippines', 'san juan la union' => 'Philippines',
         'batangas' => 'Philippines', 'leyte' => 'Philippines', 'tacloban' => 'Philippines',
         'tacloban city' => 'Philippines', 'dumaguete' => 'Philippines',
         'surigao' => 'Philippines', 'cotabato' => 'Philippines', 'puerto galera' => 'Philippines',
@@ -387,6 +400,22 @@ final class PlaceCatalog
             'Cagayan de Oro', 'Dumaguete', 'El Nido', 'Coron', 'Baguio', 'Tagaytay',
             'Vigan', 'Batanes', 'Camiguin', 'Siquijor', 'Surigao', 'Laoag', 'Legazpi',
         ],
+    ];
+
+    /*
+     * Places TARA offers as "for example: ___" when a traveller has failed to
+     * name one. Deliberately short and widely recognised rather than complete:
+     * an example only helps if the reader knows at a glance that it is a place.
+     *
+     * Every entry must resolve through IATA_CODES, or TARA would suggest
+     * something she then refuses to accept.
+     */
+    public const EXAMPLE_LOCAL = [
+        'Boracay', 'Cebu', 'Bohol', 'Palawan', 'Siargao', 'Baguio', 'El Nido', 'Coron',
+    ];
+
+    public const EXAMPLE_INTERNATIONAL = [
+        'Tokyo', 'Singapore', 'Bangkok', 'Bali', 'Seoul', 'Hong Kong',
     ];
 
     private const POPULAR_DESTINATIONS = [
