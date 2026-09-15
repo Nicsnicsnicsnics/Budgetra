@@ -14,7 +14,7 @@ class LoginTest extends TestCase
         $this->get('/login')->assertStatus(200);
     }
 
-    public function test_traveler_can_login_and_is_redirected_to_dashboard(): void
+    public function test_traveler_can_login_and_is_redirected_to_their_trips(): void
     {
         $user = User::factory()->create(['email' => 'kent@example.com', 'password' => 'password123']);
 
@@ -23,7 +23,7 @@ class LoginTest extends TestCase
             'password' => 'password123',
         ]);
 
-        $response->assertRedirect(route('dashboard'));
+        $response->assertRedirect(route('trips.index'));
         $this->assertAuthenticatedAs($user);
     }
 

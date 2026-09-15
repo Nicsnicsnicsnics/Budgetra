@@ -14,7 +14,7 @@ class SettingsController extends Controller
     public function updateTheme(Request $request)
     {
         $validated = $request->validate([
-            'theme' => 'required|in:daylight,nightflight,terracotta,retro-wanderlust,sakura-bloom,original,auto',
+            'theme' => 'required|in:original,nightflight',
         ]);
 
         auth()->user()->update($validated);

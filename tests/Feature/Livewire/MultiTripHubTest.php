@@ -40,7 +40,7 @@ class MultiTripHubTest extends TestCase
             ->assertDontSee('Bangkok');
     }
 
-    public function test_compare_with_auto_pairs_with_another_trip_and_opens_modal(): void
+    public function test_picking_two_trips_and_running_the_comparison_opens_the_modal(): void
     {
         $user  = User::factory()->create();
         $trip1 = Trip::factory()->create(['user_id' => $user->id]);
@@ -48,20 +48,35 @@ class MultiTripHubTest extends TestCase
 
         Livewire::actingAs($user)
             ->test(MultiTripHub::class)
-            ->call('compareWith', $trip1->id)
+            ->call('toggleCompare', $trip1->id)
+            ->call('toggleCompare', $trip2->id)
+            ->call('runComparison')
             ->assertSet('showComparison', true)
             ->assertSet('compareIds', [$trip1->id, $trip2->id]);
     }
 
-    public function test_compare_with_does_nothing_when_no_other_trip_exists(): void
+    public function test_one_pick_alone_does_not_open_the_comparison(): void
     {
         $user = User::factory()->create();
         $trip = Trip::factory()->create(['user_id' => $user->id]);
 
         Livewire::actingAs($user)
             ->test(MultiTripHub::class)
-            ->call('compareWith', $trip->id)
+            ->call('toggleCompare', $trip->id)
+            ->call('runComparison')
             ->assertSet('showComparison', false)
+            ->assertSet('compareIds', [$trip->id]);
+    }
+
+    public function test_picking_the_same_trip_twice_unpicks_it(): void
+    {
+        $user = User::factory()->create();
+        $trip = Trip::factory()->create(['user_id' => $user->id]);
+
+        Livewire::actingAs($user)
+            ->test(MultiTripHub::class)
+            ->call('toggleCompare', $trip->id)
+            ->call('toggleCompare', $trip->id)
             ->assertSet('compareIds', []);
     }
 
@@ -75,7 +90,9 @@ class MultiTripHubTest extends TestCase
 
         $component = Livewire::actingAs($user)
             ->test(MultiTripHub::class)
-            ->call('compareWith', $trip1->id);
+            ->call('toggleCompare', $trip1->id)
+            ->call('toggleCompare', $trip2->id)
+            ->call('runComparison');
 
         $data = $component->viewData('compareData');
         $this->assertSame(1000.0, $data[0]['categories']['Food']);
@@ -91,7 +108,9 @@ class MultiTripHubTest extends TestCase
 
         Livewire::actingAs($user)
             ->test(MultiTripHub::class)
-            ->call('compareWith', $trip1->id)
+            ->call('toggleCompare', $trip1->id)
+            ->call('toggleCompare', $trip2->id)
+            ->call('runComparison')
             ->assertSee('Compare Trips')
             ->assertSee('Spending by Category')
             ->assertSee('Cebu')

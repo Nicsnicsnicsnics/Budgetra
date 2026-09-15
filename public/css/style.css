@@ -78,29 +78,10 @@
 }
 /* :root above is the pre-theme fallback (unauthenticated pages etc).
    Every signed-in page renders one of these blocks explicitly via
-   [data-theme] on <body> — including "daylight" itself — so nested
+   [data-theme] on <body> — including "original" itself — so nested
    preview swatches (which set data-theme locally to show a theme
    regardless of the page's active one) always resolve correctly
    instead of silently inheriting whatever theme is currently active. */
-[data-theme="daylight"] {
-  --primary: #2E6FF2;
-  --primary-dark: #1E54D1;
-  --primary-hover: #1E54D1;
-  --primary-light: #E8EFFE;
-  --primary-muted: #E8EFFE;
-  --bg: #F7F9FC;
-  --bg-white: #FFFFFF;
-  --dark: #1A2333;
-  --text: #1A2333;
-  --muted: #5B6B84;
-  --border: #E1E7F0;
-  --border-light: #EDF1F7;
-  --sidebar-bg: #FFFFFF;
-  --sidebar-active: rgba(46,111,242,0.10);
-  --shadow-sm: 0 1px 2px rgba(20,30,50,.05);
-  --shadow: 0 10px 28px rgba(20,30,50,.07);
-  --shadow-lg: 0 10px 28px rgba(20,30,50,.07);
-}
 [data-theme="nightflight"] {
   /* The only dark theme, so it's the only one that needs a lighter success
      green — #16A34A lands around 4.2:1 on this theme's card background,
@@ -130,110 +111,9 @@
   --shadow: 0 14px 32px rgba(0,0,0,.5);
   --shadow-lg: 0 14px 32px rgba(0,0,0,.5);
 }
-[data-theme="terracotta"] {
-  --primary: #B5502E;
-  --primary-dark: #8F3E22;
-  --primary-hover: #8F3E22;
-  --primary-light: #F3DECD;
-  --primary-muted: #F3DECD;
-  --bg: #FBF3EA;
-  --bg-white: #FFFFFF;
-  --dark: #3B2A1E;
-  --text: #3B2A1E;
-  --muted: #85705D;
-  --border: #E9D8C0;
-  --border-light: #F1E4D2;
-  --sidebar-bg: #F3E4CF;
-  --sidebar-active: rgba(59,42,30,0.10);
-  --shadow-sm: 0 1px 2px rgba(70,40,10,.06);
-  --shadow: 0 10px 26px rgba(70,40,10,.10);
-  --shadow-lg: 0 10px 26px rgba(70,40,10,.10);
-}
-[data-theme="retro-wanderlust"] {
-  --primary: #1F6E6E;
-  --primary-dark: #124C4C;
-  --primary-hover: #124C4C;
-  --primary-light: #DCEDEA;
-  --primary-muted: #DCEDEA;
-  --bg: #F3EBDA;
-  --bg-white: #FAF5E9;
-  --dark: #3A2E22;
-  --text: #3A2E22;
-  --muted: #8A7B63;
-  --border: #DCCBA8;
-  --border-light: #EAE0C8;
-  --sidebar-bg: #123F3F;
-  --sidebar-active: rgba(255,255,255,0.10);
-  --shadow-sm: 0 1px 2px rgba(58,46,34,.10);
-  --shadow: 0 10px 26px rgba(58,46,34,.16);
-  --shadow-lg: 0 10px 26px rgba(58,46,34,.16);
-}
-[data-theme="sakura-bloom"] {
-  --primary: #D65C82;
-  --primary-dark: #C13F68;
-  --primary-hover: #C13F68;
-  --primary-light: #FBE4EC;
-  --primary-muted: #FBE4EC;
-  --bg: #FDF3F6;
-  --bg-white: #FFFFFF;
-  --dark: #2E2A2C;
-  --text: #2E2A2C;
-  --muted: #8C7A80;
-  --border: #F0D9E1;
-  --border-light: #F8E9EE;
-  --sidebar-bg: #FFF0F5;
-  --sidebar-active: rgba(214,92,130,0.10);
-  --shadow-sm: 0 1px 2px rgba(214,92,130,.06);
-  --shadow: 0 10px 26px rgba(214,92,130,.10);
-  --shadow-lg: 0 10px 26px rgba(214,92,130,.10);
-}
-/* The sidebar's text colors are hardcoded rgba(255,255,255,…) because
-   the original theme has a dark sidebar-bg. Daylight and Terracotta
-   have light sidebars, so they need their own dark-on-light overrides. */
-[data-theme="terracotta"] .sidebar,
-[data-theme="terracotta"] .sidebar-trip-name { color: #3B2A1E; }
-[data-theme="terracotta"] .sidebar-brand,
-[data-theme="terracotta"] .sidebar-avatar-wrap { border-color: rgba(59,42,30,0.15); }
-[data-theme="terracotta"] .sidebar-trip-badge { background: rgba(59,42,30,0.10); color: rgba(59,42,30,0.7); }
-[data-theme="terracotta"] .sidebar-trip-status,
-[data-theme="terracotta"] .sidebar-nav-label { color: rgba(59,42,30,0.5); }
-[data-theme="terracotta"] .sidebar-link { color: rgba(59,42,30,0.65); }
-[data-theme="terracotta"] .sidebar-link:hover { background: rgba(59,42,30,0.08); color: #3B2A1E; }
-[data-theme="terracotta"] .sidebar-link.active { background: rgba(59,42,30,0.15); color: #3B2A1E; }
-[data-theme="terracotta"] .sidebar-toggle-btn { color: rgba(59,42,30,0.5); }
-[data-theme="terracotta"] .sidebar-toggle-btn:hover { color: #3B2A1E; background: rgba(59,42,30,0.08); }
-[data-theme="terracotta"] .sidebar-logout-btn { background: rgba(59,42,30,.08); border-color: rgba(59,42,30,.15); color: rgba(59,42,30,.65); }
-[data-theme="terracotta"] .sidebar-logout-btn:hover { background: rgba(59,42,30,.18); color: #3B2A1E; }
-
-[data-theme="daylight"] .sidebar,
-[data-theme="daylight"] .sidebar-trip-name { color: #1A2333; }
-[data-theme="daylight"] .sidebar-brand,
-[data-theme="daylight"] .sidebar-avatar-wrap { border-color: rgba(26,35,51,0.10); }
-[data-theme="daylight"] .sidebar-trip-badge { background: rgba(46,111,242,0.10); color: rgba(26,35,51,0.7); }
-[data-theme="daylight"] .sidebar-trip-status,
-[data-theme="daylight"] .sidebar-nav-label { color: rgba(26,35,51,0.5); }
-[data-theme="daylight"] .sidebar-link { color: rgba(26,35,51,0.65); }
-[data-theme="daylight"] .sidebar-link:hover { background: rgba(46,111,242,0.08); color: #1A2333; }
-[data-theme="daylight"] .sidebar-link.active { background: rgba(46,111,242,0.12); color: #2E6FF2; }
-[data-theme="daylight"] .sidebar-toggle-btn { color: rgba(26,35,51,0.45); }
-[data-theme="daylight"] .sidebar-toggle-btn:hover { color: #1A2333; background: rgba(26,35,51,0.08); }
-[data-theme="daylight"] .sidebar-logout-btn { background: rgba(26,35,51,.06); border-color: rgba(26,35,51,.12); color: rgba(26,35,51,.6); }
-[data-theme="daylight"] .sidebar-logout-btn:hover { background: rgba(26,35,51,.12); color: #1A2333; }
-
-[data-theme="sakura-bloom"] .sidebar,
-[data-theme="sakura-bloom"] .sidebar-trip-name { color: #2E2A2C; }
-[data-theme="sakura-bloom"] .sidebar-brand,
-[data-theme="sakura-bloom"] .sidebar-avatar-wrap { border-color: rgba(46,42,44,0.10); }
-[data-theme="sakura-bloom"] .sidebar-trip-badge { background: rgba(214,92,130,0.12); color: rgba(46,42,44,0.7); }
-[data-theme="sakura-bloom"] .sidebar-trip-status,
-[data-theme="sakura-bloom"] .sidebar-nav-label { color: rgba(46,42,44,0.5); }
-[data-theme="sakura-bloom"] .sidebar-link { color: rgba(46,42,44,0.65); }
-[data-theme="sakura-bloom"] .sidebar-link:hover { background: rgba(214,92,130,0.10); color: #2E2A2C; }
-[data-theme="sakura-bloom"] .sidebar-link.active { background: rgba(214,92,130,0.15); color: #D65C82; }
-[data-theme="sakura-bloom"] .sidebar-toggle-btn { color: rgba(46,42,44,0.45); }
-[data-theme="sakura-bloom"] .sidebar-toggle-btn:hover { color: #2E2A2C; background: rgba(46,42,44,0.08); }
-[data-theme="sakura-bloom"] .sidebar-logout-btn { background: rgba(46,42,44,.06); border-color: rgba(46,42,44,.12); color: rgba(46,42,44,.6); }
-[data-theme="sakura-bloom"] .sidebar-logout-btn:hover { background: rgba(46,42,44,.12); color: #2E2A2C; }
+/* Both remaining themes have a dark --sidebar-bg, so the sidebar's
+   hardcoded rgba(255,255,255,…) text colors read correctly on both.
+   A light-sidebar theme would need dark-on-light overrides here. */
 
 /* Alpine's x-cloak has no effect without this — it's used across many
    modals to hide them until Alpine has initialized, avoiding a flash of
@@ -914,14 +794,8 @@ body.dashboard-body {
 .sidebar-profile-avatar-initials {
   background: var(--primary); color: #fff; font-size: 9px; font-weight: 700; letter-spacing: 0;
 }
-.sidebar-logout-link,
-[data-theme="terracotta"] .sidebar-logout-link,
-[data-theme="daylight"] .sidebar-logout-link,
-[data-theme="sakura-bloom"] .sidebar-logout-link { color: #E23A4E; }
-.sidebar-logout-link:hover,
-[data-theme="terracotta"] .sidebar-logout-link:hover,
-[data-theme="daylight"] .sidebar-logout-link:hover,
-[data-theme="sakura-bloom"] .sidebar-logout-link:hover { background: rgba(226,58,78,0.12); color: #E23A4E; }
+.sidebar-logout-link { color: #E23A4E; }
+.sidebar-logout-link:hover { background: rgba(226,58,78,0.12); color: #E23A4E; }
 .sidebar-avatar-wrap {
   padding: 16px 20px 0; margin-top: auto;
   border-top: 1px solid rgba(255,255,255,0.08);
@@ -982,12 +856,6 @@ body.dashboard-body {
    in collapsed mode, where it's the only visual grouping cue left once the
    text labels are hidden — bump it up so it actually reads as a line. */
 .sidebar-collapsed .sidebar-divider { background: rgba(255,255,255,.10); }
-[data-theme="terracotta"] .sidebar-collapsed .sidebar-divider,
-[data-theme="daylight"] .sidebar-collapsed .sidebar-divider,
-[data-theme="sakura-bloom"] .sidebar-collapsed .sidebar-divider { background: rgba(26,35,51,.12); }
-[data-theme="terracotta"] .sidebar-divider,
-[data-theme="daylight"] .sidebar-divider,
-[data-theme="sakura-bloom"] .sidebar-divider { background: rgba(26,35,51,.10); }
 
 /* Sidebar badge */
 .sidebar-badge {
@@ -2303,32 +2171,6 @@ button:disabled { opacity: 0.65; cursor: not-allowed; }
    reproduces the same rhythm without depending on how many links there are. */
 .admin-sidebar-collapsed .admin-sidebar-primary { gap: 14px; }
 .admin-sidebar-collapsed .admin-sidebar-foot { align-items: center; gap: 8px; }
-
-/* Light-sidebar themes need dark-on-light overrides here too, same
-   reasoning as the traveler sidebar's per-theme block above. */
-[data-theme="terracotta"] .admin-sidebar-name,
-[data-theme="terracotta"] .admin-sidebar-toggle-btn { color: #3B2A1E; }
-[data-theme="terracotta"] .admin-sidebar-link { color: rgba(59,42,30,0.65); }
-[data-theme="terracotta"] .admin-sidebar-link:hover { background: rgba(59,42,30,0.08); color: #3B2A1E; }
-[data-theme="terracotta"] .admin-sidebar-link.active { background: rgba(59,42,30,0.15); color: #3B2A1E; }
-[data-theme="terracotta"] .admin-sidebar-toggle-btn:hover { background: rgba(59,42,30,0.08); }
-[data-theme="terracotta"] .admin-sidebar-divider { background: rgba(59,42,30,0.15); }
-
-[data-theme="daylight"] .admin-sidebar-name,
-[data-theme="daylight"] .admin-sidebar-toggle-btn { color: #1A2333; }
-[data-theme="daylight"] .admin-sidebar-link { color: rgba(26,35,51,0.65); }
-[data-theme="daylight"] .admin-sidebar-link:hover { background: rgba(26,35,51,0.08); color: #1A2333; }
-[data-theme="daylight"] .admin-sidebar-link.active { background: rgba(46,111,242,0.12); color: #2E6FF2; }
-[data-theme="daylight"] .admin-sidebar-toggle-btn:hover { background: rgba(26,35,51,0.08); }
-[data-theme="daylight"] .admin-sidebar-divider { background: rgba(26,35,51,0.10); }
-
-[data-theme="sakura-bloom"] .admin-sidebar-name,
-[data-theme="sakura-bloom"] .admin-sidebar-toggle-btn { color: #2E2A2C; }
-[data-theme="sakura-bloom"] .admin-sidebar-link { color: rgba(46,42,44,0.65); }
-[data-theme="sakura-bloom"] .admin-sidebar-link:hover { background: rgba(214,92,130,0.10); color: #2E2A2C; }
-[data-theme="sakura-bloom"] .admin-sidebar-link.active { background: rgba(214,92,130,0.15); color: #D65C82; }
-[data-theme="sakura-bloom"] .admin-sidebar-toggle-btn:hover { background: rgba(46,42,44,0.08); }
-[data-theme="sakura-bloom"] .admin-sidebar-divider { background: rgba(46,42,44,0.10); }
 
 /* Main / topbar */
 .admin-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }

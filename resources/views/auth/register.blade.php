@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Create Account — Budgetra</title>
-    <link rel="icon" type="image/png" href="{{ asset('systemicons/budgetraicon-modified.png') }}">
+    <link rel="icon" type="image/jpeg" href="{{ asset('systemicons/budgetra.jpg') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -108,6 +108,19 @@
                     </div>
                 </div>
 
+                @php
+                    // The same list the Profile Builder draws its home-city
+                    // options from — this used to be a second copy of those 29
+                    // names, so a country could drift into one and not the
+                    // other and a traveler would end up with a home country
+                    // that has no cities behind it.
+                    // Sorted here rather than by hand: the config is grouped by
+                    // region, and a country added to it should find its own
+                    // place in this list instead of landing at the bottom.
+                    $countries = array_keys(config('country_cities'));
+                    sort($countries);
+                @endphp
+
                 {{-- Country --}}
                 <div class="form-group">
                     <label class="form-label" for="country">
@@ -126,17 +139,8 @@
                                 onfocus="this.style.borderColor='var(--primary)';this.style.boxShadow='0 0 0 3px rgba(139,58,16,0.12)'"
                                 onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'">
                             <option value="" disabled selected>Select your country</option>
-                            @foreach([
-                                'Philippines' => '', 'Indonesia' => '', 'Thailand' => '', 'Vietnam' => '',
-                                'Malaysia' => '', 'Singapore' => '', 'Japan' => '', 'South Korea' => '',
-                                'China' => '', 'India' => '', 'Australia' => '', 'New Zealand' => '',
-                                'United States' => '', 'Canada' => '', 'United Kingdom' => '',
-                                'Germany' => '', 'France' => '', 'Italy' => '', 'Spain' => '',
-                                'Netherlands' => '', 'Brazil' => '', 'Mexico' => '', 'Argentina' => '',
-                                'Saudi Arabia' => '', 'United Arab Emirates' => '', 'Egypt' => '',
-                                'Nigeria' => '', 'South Africa' => '', 'Kenya' => '',
-                            ] as $name => $flag)
-                                <option value="{{ $name }}" {{ old('country') === $name ? 'selected' : '' }}>{{ $flag }} {{ $name }}</option>
+                            @foreach($countries as $name)
+                                <option value="{{ $name }}" {{ old('country') === $name ? 'selected' : '' }}>{{ $name }}</option>
                             @endforeach
                         </select>
                     </div>

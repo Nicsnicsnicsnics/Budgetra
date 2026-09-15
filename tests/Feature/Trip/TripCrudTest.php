@@ -14,14 +14,14 @@ class TripCrudTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_index_shows_only_users_trips(): void
+    public function test_saved_trips_shows_only_users_trips(): void
     {
         $user  = User::factory()->create();
         $other = User::factory()->create();
-        $mine   = Trip::factory()->create(['user_id' => $user->id,  'destination' => 'Boracay']);
-        $theirs = Trip::factory()->create(['user_id' => $other->id, 'destination' => 'Palawan']);
+        Trip::factory()->create(['user_id' => $user->id,  'destination' => 'Boracay']);
+        Trip::factory()->create(['user_id' => $other->id, 'destination' => 'Palawan']);
 
-        $response = $this->actingAs($user)->get('/trips');
+        $response = $this->actingAs($user)->get('/saved-trips');
 
         $response->assertStatus(200);
         $response->assertSee('Boracay');
@@ -38,7 +38,7 @@ class TripCrudTest extends TestCase
             'end_date'      => '2026-08-07',
             'num_travelers' => 2,
             'budget_limit'  => 50000,
-            'travel_type'   => 'Couple',
+            'travel_type'   => 'Group',
             'notes'         => 'Anniversary trip',
         ]);
 
@@ -163,7 +163,7 @@ class TripCrudTest extends TestCase
             'end_date'      => '2026-09-05',
             'num_travelers' => 2,
             'budget_limit'  => 40000,
-            'travel_type'   => 'Couple',
+            'travel_type'   => 'Group',
         ]);
 
         $trip = Trip::where('destination', 'Coron, Palawan')->first();

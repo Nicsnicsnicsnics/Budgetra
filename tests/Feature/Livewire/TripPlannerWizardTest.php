@@ -21,22 +21,27 @@ class TripPlannerWizardTest extends TestCase
         $this->actingAs($user)->get('/trips/plan')->assertStatus(200);
     }
 
-    public function test_wizard_starts_at_step_one(): void
+    // Step 0 is the manual/AI planning-mode chooser the wizard now opens on;
+    // picking a mode is what lands the traveller on step 1.
+    public function test_wizard_starts_on_the_planning_mode_chooser(): void
     {
         $user = User::factory()->create();
         Livewire::actingAs($user)
             ->test(TripPlannerWizard::class)
+            ->assertSet('step', 0)
+            ->call('selectPlanningMode', 'manual')
+            ->assertSet('planningMode', 'manual')
             ->assertSet('step', 1);
     }
 
-    public function test_can_advance_to_step_two(): void
+    public function test_choosing_a_scope_advances_to_the_destination_step(): void
     {
         $user = User::factory()->create();
         Livewire::actingAs($user)
             ->test(TripPlannerWizard::class)
-            ->set('tripScope', 'international')
-            ->call('nextStep')
-            ->assertSet('step', 2);
+            ->call('selectScope', 'international')
+            ->assertSet('tripScope', 'international')
+            ->assertSet('step', 4);
     }
 
     public function test_wizard_creates_trip_on_confirm(): void
@@ -52,7 +57,7 @@ class TripPlannerWizardTest extends TestCase
             ->set('destinationName', 'Boracay, Philippines')
             ->set('startDate', '2027-01-10')
             ->set('endDate', '2027-01-15')
-            ->set('travelType', 'Solo')
+            ->set('groupType', 'Solo')
             ->set('budgetTier', 'Mid-range')
             ->set('budgetLimit', 50000)
             ->call('confirm')
@@ -80,7 +85,31 @@ class TripPlannerWizardTest extends TestCase
         return ['name' => $name, 'type' => 'Landmark', 'city' => 'Cebu', 'isFree' => $isFree, 'price' => $isFree ? 'FREE' : $price];
     }
 
-    public function test_select_venue_replaces_previous_pick_and_advances_to_attractions(): void
+    // Venues are multi-select: each tap toggles one on or off, and the
+    // traveller moves on with the Continue button rather than the pick itself
+    // advancing the step.
+    public function test_toggling_venues_adds_each_pick_and_continuing_advances_to_attractions(): void
+    {
+        $user = User::factory()->create();
+        Http::fake();  // continueFromVenues() kicks off the attraction search
+
+        Livewire::actingAs($user)
+            ->test(TripPlannerWizard::class)
+            ->set('manualTo', 'Cebu')
+            ->set('flightTripType', 'round_trip')
+            ->set('venueResults', [$this->fakeVenue('Larsian BBQ'), $this->fakeVenue('Zubuchon')])
+            ->call('toggleVenue', 0)
+            ->assertSet('selectedVenues.Larsian BBQ.name', 'Larsian BBQ')
+            ->call('toggleVenue', 1)
+            ->assertSet('selectedVenues', [
+                'Larsian BBQ' => $this->fakeVenue('Larsian BBQ'),
+                'Zubuchon'    => $this->fakeVenue('Zubuchon'),
+            ])
+            ->call('continueFromVenues')
+            ->assertSet('step', 5);
+    }
+
+    public function test_toggling_the_same_venue_twice_removes_it(): void
     {
         $user = User::factory()->create();
 
@@ -89,23 +118,12 @@ class TripPlannerWizardTest extends TestCase
             ->set('manualTo', 'Cebu')
             ->set('flightTripType', 'round_trip')
             ->set('venueResults', [$this->fakeVenue('Larsian BBQ'), $this->fakeVenue('Zubuchon')])
-            ->call('selectVenue', 0)
-            ->assertSet('selectedVenues.Larsian BBQ.name', 'Larsian BBQ')
-            ->assertSet('step', 5);
-
-        // Picking again from a fresh instance simulates going back and choosing differently —
-        // selecting should replace, not add to, the previous pick.
-        Livewire::actingAs($user)
-            ->test(TripPlannerWizard::class)
-            ->set('manualTo', 'Cebu')
-            ->set('flightTripType', 'round_trip')
-            ->set('venueResults', [$this->fakeVenue('Larsian BBQ'), $this->fakeVenue('Zubuchon')])
-            ->call('selectVenue', 0)
-            ->call('selectVenue', 1)
-            ->assertSet('selectedVenues', ['Zubuchon' => $this->fakeVenue('Zubuchon')]);
+            ->call('toggleVenue', 0)
+            ->call('toggleVenue', 0)
+            ->assertSet('selectedVenues', []);
     }
 
-    public function test_select_attraction_replaces_previous_pick_and_advances_to_step_six(): void
+    public function test_toggling_attractions_adds_each_pick_and_continuing_advances_to_step_six(): void
     {
         $user = User::factory()->create();
 
@@ -113,11 +131,15 @@ class TripPlannerWizardTest extends TestCase
             ->test(TripPlannerWizard::class)
             ->set('flightTripType', 'round_trip')
             ->set('attractionResults', [$this->fakeAttraction('Magellan\'s Cross'), $this->fakeAttraction('Fort San Pedro')])
-            ->call('selectAttraction', 0)
+            ->call('toggleAttraction', 0)
             ->assertSet('selectedAttractions.Magellan\'s Cross.name', 'Magellan\'s Cross')
-            ->assertSet('step', 6)
-            ->call('selectAttraction', 1)
-            ->assertSet('selectedAttractions', ['Fort San Pedro' => $this->fakeAttraction('Fort San Pedro')]);
+            ->call('toggleAttraction', 1)
+            ->assertSet('selectedAttractions', [
+                'Magellan\'s Cross'             => $this->fakeAttraction('Magellan\'s Cross'),
+                'Fort San Pedro' => $this->fakeAttraction('Fort San Pedro'),
+            ])
+            ->call('continueFromAttractions')
+            ->assertSet('step', 6);
     }
 
     public function test_save_itinerary_creates_one_row_for_the_selected_venue_and_attraction(): void
@@ -133,9 +155,9 @@ class TripPlannerWizardTest extends TestCase
             ->set('manualBudgetMin', '20000')
             ->set('manualBudgetMax', '30000')
             ->set('venueResults', [$this->fakeVenue('Larsian BBQ')])
-            ->call('selectVenue', 0)
+            ->call('toggleVenue', 0)
             ->set('attractionResults', [$this->fakeAttraction('Fort San Pedro')])
-            ->call('selectAttraction', 0)
+            ->call('toggleAttraction', 0)
             ->call('saveItinerary');
 
         $trip = Trip::where('user_id', $user->id)->first();
@@ -283,7 +305,7 @@ class TripPlannerWizardTest extends TestCase
             ->test(TripPlannerWizard::class)
             ->set('flightTripType', 'round_trip')
             ->set('attractionResults', [$this->fakeAttraction('Fort San Pedro')])
-            ->call('selectAttraction', 0)
+            ->call('toggleAttraction', 0)
             ->set('step', 8)
             ->call('backToAttractions')
             ->assertSet('step', 5)

@@ -116,10 +116,13 @@
     @endphp
     <div class="atd-review-row" x-data="{ editing: false, expanded: false, deleting: false }"
          data-rating="{{ $review->rating }}" data-time="{{ $review->created_at->timestamp }}" data-trip-type="{{ $review->trip_type }}">
+        {{-- Only your own row carries data-user-avatar: avatar-sync.js repaints
+             every element with it after you save a new photo, and the other
+             reviewers' pictures are none of its business. --}}
         @if ($review->user?->profile_photo)
-        <img src="{{ Illuminate\Support\Facades\Storage::url($review->user->profile_photo) }}" alt="{{ $review->user->full_name }}" class="atd-review-avatar atd-review-avatar-img">
+        <img src="{{ Illuminate\Support\Facades\Storage::url($review->user->profile_photo) }}" alt="{{ $review->user->full_name }}" class="atd-review-avatar atd-review-avatar-img" @if ($isMine) data-user-avatar @endif>
         @else
-        <div class="atd-review-avatar">{{ strtoupper($initials) }}</div>
+        <div class="atd-review-avatar" @if ($isMine) data-user-avatar data-avatar-img-class="atd-review-avatar atd-review-avatar-img" @endif>{{ strtoupper($initials) }}</div>
         @endif
 
         <div style="min-width:0;">

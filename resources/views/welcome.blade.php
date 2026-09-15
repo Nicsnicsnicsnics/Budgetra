@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Budgetra — Plan Smart. Travel More.</title>
-    <link rel="icon" type="image/png" href="{{ asset('systemicons/budgetraicon-modified.png') }}">
+    <link rel="icon" type="image/jpeg" href="{{ asset('systemicons/budgetra.jpg') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -20,7 +20,7 @@
 <nav class="site-navbar">
     <div class="container-nav">
         <div class="nav-brand">
-            <img src="{{ asset('systemicons/budgetraicon-modified.png') }}" alt="Budgetra" style="height:56px;width:auto;">
+            <img src="{{ asset('systemicons/budgetra.jpg') }}" alt="Budgetra" style="height:56px;width:auto;">
         </div>
         <div class="nav-actions" style="margin-left:auto;">
             <a href="{{ route('login') }}" class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border:1.5px solid rgba(255,255,255,.4);backdrop-filter:blur(6px);">Login</a>

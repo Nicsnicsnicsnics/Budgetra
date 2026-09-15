@@ -20,7 +20,7 @@
 
     {{-- ── LEFT: Personal details ── --}}
     <div style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:20px;box-shadow:0 4px 16px rgba(45,27,20,0.05);overflow:hidden;display:flex;flex-direction:column;height:100%;box-sizing:border-box;">
-        <form method="POST" action="{{ route('profile.update') }}" enctype="multipart/form-data" x-data="{ preview: null, filename: '' }" style="display:flex;flex-direction:column;flex:1;min-height:0;">
+        <form id="profileForm" method="POST" action="{{ route('profile.update') }}" enctype="multipart/form-data" x-data="{ preview: null, filename: '' }" style="display:flex;flex-direction:column;flex:1;min-height:0;">
             @csrf
             @method('PUT')
 
@@ -43,9 +43,21 @@
                             <i class="fa-solid fa-spinner fa-spin" style="color:var(--primary);font-size:20px;"></i>
                         </div>
                     </div>
+                    {{-- Sits outside the circle, which is overflow:hidden, but
+                         inside its positioned parent. A <label for> rather than
+                         a button: it opens the picker with no JS at all, and
+                         still reaches the keyboard. --}}
+                    <label for="profile_photo" class="avatar-add-btn" title="Change profile photo" tabindex="0"
+                           onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }">
+                        <i class="fa-solid fa-plus"></i>
+                        <span class="sr-only">Change profile photo</span>
+                    </label>
+                    <input type="file" id="profile_photo" name="profile_photo"
+                           accept="image/jpeg,image/png,image/jpg,image/webp" style="display:none;"
+                           onchange="budgetraPreviewAvatar(this)">
                 </div>
                 <div style="min-width:0;">
-                    <div style="font-size:15px;font-weight:700;color:var(--dark);">{{ $user->full_name }}</div>
+                    <div id="profileCardName" style="font-size:15px;font-weight:700;color:var(--dark);">{{ $user->full_name }}</div>
                     <div style="font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ $user->email }}</div>
                 </div>
             </div>
@@ -59,7 +71,7 @@
                     <input type="text" id="first_name" name="first_name" required
                            value="{{ old('first_name', $user->first_name) }}"
                            style="width:100%;background:var(--bg);border:1.5px solid {{ $errors->has('first_name') ? '#DC2626' : 'var(--border)' }};border-radius:12px;padding:11px 14px;font-size:13px;font-weight:600;color:var(--dark);box-sizing:border-box;">
-                    @error('first_name') <span style="display:block;font-size:11px;color:#DC2626;margin-top:4px;">{{ $message }}</span> @enderror
+                    <span id="err_first_name" class="pf-field-error" style="display:{{ $errors->has('first_name') ? 'block' : 'none' }};font-size:11px;color:#DC2626;margin-top:4px;">{{ $errors->first('first_name') }}</span>
                 </div>
 
                 <div style="margin-bottom:16px;">
@@ -69,7 +81,7 @@
                     <input type="text" id="last_name" name="last_name" required
                            value="{{ old('last_name', $user->last_name) }}"
                            style="width:100%;background:var(--bg);border:1.5px solid {{ $errors->has('last_name') ? '#DC2626' : 'var(--border)' }};border-radius:12px;padding:11px 14px;font-size:13px;font-weight:600;color:var(--dark);box-sizing:border-box;">
-                    @error('last_name') <span style="display:block;font-size:11px;color:#DC2626;margin-top:4px;">{{ $message }}</span> @enderror
+                    <span id="err_last_name" class="pf-field-error" style="display:{{ $errors->has('last_name') ? 'block' : 'none' }};font-size:11px;color:#DC2626;margin-top:4px;">{{ $errors->first('last_name') }}</span>
                 </div>
 
                 <div style="margin-bottom:20px;">
@@ -81,27 +93,8 @@
                     </div>
                 </div>
 
-                <div style="margin-bottom:24px;display:flex;flex-direction:column;flex:1;min-height:0;">
-                    <label style="display:block;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Profile Photo</label>
-                    <label for="profile_photo" class="profile-photo-dropzone"
-                           style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;width:100%;flex:1;min-height:100px;box-sizing:border-box;border:1.5px dashed var(--border);border-radius:14px;padding:18px 16px;cursor:pointer;transition:border-color .15s ease,background .15s ease;text-align:center;">
-                        <div style="width:52px;height:52px;border-radius:14px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-                            <i class="fa-solid fa-cloud-arrow-up" style="color:var(--primary);font-size:20px;"></i>
-                        </div>
-                        <div style="min-width:0;">
-                            <div style="font-size:14px;font-weight:700;color:var(--dark);">
-                                <span style="color:var(--primary);">Click to upload</span> a new photo
-                            </div>
-                            <div id="fileNameLabel" style="font-size:12px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">PNG or JPG, up to 5MB</div>
-                        </div>
-                    </label>
-                    <input type="file" id="profile_photo" name="profile_photo" accept="image/jpeg,image/png,image/jpg,image/webp" style="display:none;"
-                           onchange="budgetraPreviewAvatar(this)">
-                    @error('profile_photo') <span style="display:block;font-size:11px;color:#DC2626;margin-top:4px;">{{ $message }}</span> @enderror
-                </div>
-
                 <div style="margin-top:auto;display:flex;justify-content:flex-end;padding-top:20px;">
-                    <button type="submit"
+                    <button type="submit" id="profileSaveBtn"
                             style="background:var(--primary);color:#fff;border:none;border-radius:12px;padding:13px 28px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Hanken Grotesk',sans-serif;transition:background .18s;"
                             onmouseenter="this.style.background='var(--primary-dark)'" onmouseleave="this.style.background='var(--primary)'">
                         <i class="fa-solid fa-check" style="font-size:11px;"></i> Save Changes
@@ -257,7 +250,50 @@
 </div>
 
 <style>
-.profile-photo-dropzone:hover { border-color: var(--primary); background: var(--primary-light); }
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+
+/* The + on the avatar, which replaced the dropzone below the form. Ringed in
+   the card's own background so it reads as sitting on top of the photo rather
+   than being part of it. */
+.avatar-add-btn{
+    position:absolute;right:-2px;bottom:-2px;z-index:3;
+    width:26px;height:26px;border-radius:50%;
+    background:var(--primary);color:#fff;
+    display:flex;align-items:center;justify-content:center;
+    font-size:11px;cursor:pointer;
+    border:2px solid var(--bg-white);
+    transition:background .15s ease,transform .15s ease;
+}
+.avatar-add-btn:hover{background:var(--primary-dark);transform:scale(1.08);}
+.avatar-add-btn:focus-visible{outline:2px solid var(--primary);outline-offset:3px;}
+
+/* A refused photo. Scrim is neutral black rather than a brand tint, which
+   read as a haze over the darker themes. */
+.pf-modal-backdrop{
+    position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.55);
+    display:flex;align-items:center;justify-content:center;padding:24px;
+}
+.pf-modal-card{
+    background:var(--bg-white);border:1.5px solid var(--border);border-radius:20px;
+    padding:28px 26px 22px;max-width:380px;width:100%;text-align:center;
+    box-shadow:0 18px 50px rgba(0,0,0,.28);
+}
+.pf-modal-icon{
+    width:52px;height:52px;border-radius:50%;margin:0 auto 16px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:20px;color:var(--danger);background:rgba(220,38,38,.14);
+}
+@supports (color: color-mix(in srgb, red, blue)) {
+    .pf-modal-icon{background:color-mix(in srgb, var(--danger) 16%, transparent);}
+}
+.pf-modal-title{font-size:17px;font-weight:800;color:var(--dark);margin:0 0 8px;}
+.pf-modal-msg{font-size:13px;color:var(--muted);line-height:1.6;margin:0 0 20px;}
+.pf-modal-btn{
+    width:100%;background:var(--primary);color:#fff;border:none;border-radius:12px;
+    padding:12px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;
+    transition:background .18s;
+}
+.pf-modal-btn:hover{background:var(--primary-dark);}
 .rv-card-sm{border:1.5px solid var(--border);border-radius:14px;padding:14px 16px;background:var(--bg-white);}
 .rv-edit{font-size:11px;font-weight:700;color:var(--primary);cursor:pointer;white-space:nowrap;flex-shrink:0;text-decoration:none;}
 .rv-edit:hover{text-decoration:underline;}
@@ -276,20 +312,84 @@
 @media (max-width: 860px) {
     div[style*="grid-template-columns:1fr 1fr"][style*="align-items:stretch"] { grid-template-columns: 1fr !important; }
 }
+
+.pf-toast{
+    position:fixed;right:24px;bottom:24px;z-index:60;
+    display:flex;align-items:center;gap:8px;
+    background:var(--dark);color:var(--bg-white);
+    border-radius:12px;padding:12px 18px;
+    font-size:13px;font-weight:700;
+    box-shadow:0 8px 24px rgba(45,27,20,.22);
+    opacity:0;transform:translateY(8px);pointer-events:none;
+    transition:opacity .2s,transform .2s;
+}
+.pf-toast.is-shown{opacity:1;transform:translateY(0);}
+@media (prefers-reduced-motion:reduce){
+    .pf-toast{transition:opacity .2s;transform:none;}
+    .pf-toast.is-shown{transform:none;}
+}
 </style>
+
+{{-- Saving no longer reloads the page, so this is the only thing that says
+     it worked. --}}
+<div id="profileSavedToast" class="pf-toast" role="status" aria-live="polite">
+    <i class="fa-solid fa-circle-check"></i> Profile updated
+</div>
+
+{{-- Rendered open when the server refused the photo, so a rejection that
+     slipped past the browser check lands in the same place as one that did
+     not. @error gives the server's own wording. --}}
+<div id="photoErrorModal" class="pf-modal-backdrop"
+     style="display:{{ $errors->has('profile_photo') ? 'flex' : 'none' }};"
+     onclick="if (event.target === this) budgetraHidePhotoError();">
+    <div class="pf-modal-card" role="alertdialog" aria-modal="true" aria-labelledby="photoErrorTitle">
+        <div class="pf-modal-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+        <h3 class="pf-modal-title" id="photoErrorTitle">Photo not accepted</h3>
+        <p class="pf-modal-msg" id="photoErrorMsg">{{ $errors->first('profile_photo') }}</p>
+        <button type="button" class="pf-modal-btn" onclick="budgetraHidePhotoError()">Got it</button>
+    </div>
+</div>
 
 {{-- Inline rather than pushed: this view renders under layouts.admin for an
      admin account, and that layout has no @stack('scripts') to push into. --}}
 <script>
+    // Matches the rule in ProfileController::update (max:5120, in kilobytes).
+    // Both are needed: this one spares the traveler a slow upload that was
+    // always going to be refused, and that one is what actually enforces it.
+    var BUDGETRA_MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+
+    function budgetraShowPhotoError(message) {
+        document.getElementById('photoErrorMsg').textContent = message;
+        document.getElementById('photoErrorModal').style.display = 'flex';
+    }
+
+    function budgetraHidePhotoError() {
+        document.getElementById('photoErrorModal').style.display = 'none';
+    }
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') budgetraHidePhotoError();
+    });
+
     function budgetraPreviewAvatar(input) {
         var file    = input.files[0];
-        var label   = document.getElementById('fileNameLabel');
         var img     = document.getElementById('avatarPreview');
         var initial = document.getElementById('avatarInitial');
         var spinner = document.getElementById('avatarSpinner');
 
-        label.textContent = file ? file.name : 'PNG or JPG, up to 5MB';
         if (!file) return;
+
+        if (file.size > BUDGETRA_MAX_PHOTO_BYTES) {
+            // Cleared so the form cannot post a file the server would refuse
+            // anyway — and so choosing the same file again still fires change,
+            // which it would not if the value stayed put.
+            input.value = '';
+            budgetraShowPhotoError(
+                'That photo is ' + (file.size / 1048576).toFixed(1) +
+                ' MB. Profile photos have to be 5 MB or smaller.'
+            );
+            return;
+        }
 
         spinner.style.display = 'flex';
 
@@ -305,11 +405,125 @@
         };
         img.onerror = function () {
             spinner.style.display = 'none';
-            label.textContent     = 'That file could not be read — pick another.';
+            input.value           = '';
+            budgetraShowPhotoError('That file could not be read as an image. Pick another one.');
             URL.revokeObjectURL(url);
         };
 
         img.src = url;
     }
+
+    /**
+     * Saving without a reload.
+     *
+     * The photo shows up in three places — this card, the sidebar and your own
+     * review rows — and a normal form post repainted all three only because it
+     * reloaded the page. Posting with fetch() keeps the page put, so the
+     * server's answer is handed to budgetraSyncAvatar(), which repaints every
+     * element tagged data-user-avatar. The sidebar is the one that genuinely
+     * needs it: it is @@persist'ed, so no wire:navigate will ever re-render it.
+     *
+     * The form still works with JavaScript off — the submit listener is the
+     * only thing standing between it and the ordinary POST.
+     */
+    (function () {
+        var form = document.getElementById('profileForm');
+        var btn  = document.getElementById('profileSaveBtn');
+        if (!form || !btn) return;
+
+        function clearErrors() {
+            ['first_name', 'last_name'].forEach(function (field) {
+                var slot = document.getElementById('err_' + field);
+                if (slot) { slot.textContent = ''; slot.style.display = 'none'; }
+                var input = document.getElementById(field);
+                if (input) input.style.borderColor = 'var(--border)';
+            });
+        }
+
+        function showErrors(errors) {
+            clearErrors();
+
+            Object.keys(errors).forEach(function (field) {
+                var message = [].concat(errors[field])[0];
+
+                // A rejected photo is the one error with its own dialog — the
+                // same one the 5 MB client-side check uses, so the two paths
+                // look identical to whoever hit them.
+                if (field === 'profile_photo') {
+                    budgetraShowPhotoError(message);
+                    return;
+                }
+
+                var slot = document.getElementById('err_' + field);
+                if (slot) { slot.textContent = message; slot.style.display = 'block'; }
+                var input = document.getElementById(field);
+                if (input) input.style.borderColor = '#DC2626';
+            });
+        }
+
+        function applySaved(data) {
+            clearErrors();
+
+            var name = document.getElementById('profileCardName');
+            if (name && data.full_name) name.textContent = data.full_name;
+
+            if (data.photo_url) {
+                // The circle is already showing the blob: URL from the picker.
+                // Pointing it at the stored file instead lets that blob be
+                // released and keeps this card honest about what was saved.
+                var img     = document.getElementById('avatarPreview');
+                var initial = document.getElementById('avatarInitial');
+                if (img) { img.src = data.photo_url; img.style.display = 'block'; }
+                if (initial) initial.style.display = 'none';
+
+                if (typeof window.budgetraSyncAvatar === 'function') {
+                    window.budgetraSyncAvatar(data.photo_url);
+                }
+            }
+
+            // Otherwise the same file would be uploaded again on the next save.
+            var picker = document.getElementById('profile_photo');
+            if (picker) picker.value = '';
+
+            var toast = document.getElementById('profileSavedToast');
+            if (!toast) return;
+            toast.classList.add('is-shown');
+            clearTimeout(toast.dataset.timer);
+            toast.dataset.timer = setTimeout(function () {
+                toast.classList.remove('is-shown');
+            }, 2600);
+        }
+
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            if (btn.disabled) return;
+
+            var label = btn.innerHTML;
+            btn.disabled = true;
+            btn.style.opacity = '.7';
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="font-size:11px;"></i> Saving…';
+
+            fetch(form.action, {
+                method: 'POST',            // with _method=PUT in the body, so the file survives
+                body: new FormData(form),
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin',
+            }).then(function (res) {
+                return res.json().catch(function () { return {}; }).then(function (data) {
+                    return { ok: res.ok, status: res.status, data: data };
+                });
+            }).then(function (r) {
+                if (r.ok) applySaved(r.data);
+                else if (r.status === 422) showErrors(r.data.errors || {});
+                else budgetraShowPhotoError('Your changes could not be saved. Please try again.');
+            }).catch(function () {
+                budgetraShowPhotoError('Your changes could not be saved. Check your connection and try again.');
+            }).then(function () {
+                btn.disabled = false;
+                btn.style.opacity = '';
+                btn.innerHTML = label;
+            });
+        });
+    })();
 </script>
 @endsection

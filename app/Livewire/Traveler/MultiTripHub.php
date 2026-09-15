@@ -79,9 +79,9 @@ class MultiTripHub extends Component
             // Same matching as Saved Trips: a renamed trip should still be
             // findable by the place it goes to, and vice versa.
             $term = '%' . str_replace('%', '\%', $this->search) . '%';
-            $query->where(fn ($w) => $w->where('destination', 'ilike', $term)
-                                       ->orWhere('trip_name', 'ilike', $term)
-                                       ->orWhere('leg2_destination', 'ilike', $term));
+            $query->where(fn ($w) => $w->whereLike('destination', $term, caseSensitive: false)
+                                       ->orWhereLike('trip_name', $term, caseSensitive: false)
+                                       ->orWhereLike('leg2_destination', $term, caseSensitive: false));
         }
         return $query->get()->map(function (Trip $trip) {
             $today = Carbon::today();

@@ -15,12 +15,33 @@ class AlertsUiTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_alerts_page_loads(): void
+    public function test_alerts_page_lists_a_waiting_notification(): void
+    {
+        $user = User::factory()->create();
+        \App\Models\UserProfile::create(['user_id' => $user->id]);
+        $trip = Trip::factory()->create(['user_id' => $user->id]);
+        Notification::create([
+            'user_id' => $user->id, 'trip_id' => $trip->id,
+            'type' => 'budget_warning', 'message' => 'Food is at 50% of its budget', 'is_read' => false,
+        ]);
+
+        $this->actingAs($user)->get('/alerts')
+            ->assertStatus(200)
+            ->assertSee('Food is at 50% of its budget');
+    }
+
+    public function test_alerts_page_shows_the_all_clear_when_nothing_is_waiting(): void
     {
         $user = User::factory()->create();
         \App\Models\UserProfile::create(['user_id' => $user->id]);
         Trip::factory()->create(['user_id' => $user->id]);
-        $this->actingAs($user)->get('/alerts')->assertStatus(200)->assertSee('Alerts');
+        // Saving a trip congratulates the traveller, so the all-clear state
+        // only exists once those have been cleared out.
+        Notification::where('user_id', $user->id)->delete();
+
+        $this->actingAs($user)->get('/alerts')
+            ->assertStatus(200)
+            ->assertSee('All caught up!');
     }
 
     public function test_badge_shows_unread_count(): void

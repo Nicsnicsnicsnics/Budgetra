@@ -28,21 +28,33 @@ class ProfileTest extends TestCase
         $user = User::factory()->create();
 
         $response = $this->actingAs($user)->put('/profile', [
-            'full_name'       => 'Updated Name',
-            'phone'           => '09123456789',
-            'country'         => 'Philippines',
-            'currency_code'   => 'PHP',
-            'currency_symbol' => '₱',
+            'first_name' => 'Updated',
+            'last_name'  => 'Name',
         ]);
 
         $response->assertRedirect();
         $response->assertSessionHas('success');
+        // full_name is derived from the parts rather than posted directly.
         $this->assertDatabaseHas('users', [
-            'id'        => $user->id,
-            'full_name' => 'Updated Name',
-            'phone'     => '09123456789',
-            'country'   => 'Philippines',
+            'id'         => $user->id,
+            'first_name' => 'Updated',
+            'last_name'  => 'Name',
+            'full_name'  => 'Updated Name',
         ]);
+    }
+
+    // The parts are joined around any middle name the account already has,
+    // so updating first/last must not drop it from the display name.
+    public function test_updating_the_name_keeps_an_existing_middle_name(): void
+    {
+        $user = User::factory()->create(['middle_name' => 'Reyes']);
+
+        $this->actingAs($user)->put('/profile', [
+            'first_name' => 'Updated',
+            'last_name'  => 'Name',
+        ]);
+
+        $this->assertSame('Updated Reyes Name', $user->fresh()->full_name);
     }
 
     public function test_user_can_upload_profile_photo(): void
@@ -51,7 +63,8 @@ class ProfileTest extends TestCase
         $user = User::factory()->create();
 
         $response = $this->actingAs($user)->put('/profile', [
-            'full_name'     => $user->full_name,
+            'first_name'    => $user->first_name ?? 'Kent',
+            'last_name'     => $user->last_name ?? 'Pielago',
             'profile_photo' => UploadedFile::fake()->image('photo.jpg', 200, 200),
         ]);
 
@@ -68,7 +81,8 @@ class ProfileTest extends TestCase
         Storage::disk('public')->put('profile-photos/old.jpg', 'fake-content');
 
         $this->actingAs($user)->put('/profile', [
-            'full_name'     => $user->full_name,
+            'first_name'    => $user->first_name ?? 'Kent',
+            'last_name'     => $user->last_name ?? 'Pielago',
             'profile_photo' => UploadedFile::fake()->image('new.jpg', 200, 200),
         ]);
 
@@ -82,11 +96,11 @@ class ProfileTest extends TestCase
         $this->get('/profile')->assertRedirect(route('login'));
     }
 
-    public function test_full_name_is_required(): void
+    public function test_first_and_last_name_are_required(): void
     {
         $user = User::factory()->create();
-        $response = $this->actingAs($user)->put('/profile', ['full_name' => '']);
-        $response->assertSessionHasErrors('full_name');
+        $response = $this->actingAs($user)->put('/profile', ['first_name' => '', 'last_name' => '']);
+        $response->assertSessionHasErrors(['first_name', 'last_name']);
     }
 
     // The exact bug reported live: the Address card's country line was a

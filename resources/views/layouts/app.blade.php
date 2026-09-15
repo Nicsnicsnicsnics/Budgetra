@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $title ?? config('app.name', 'Budgetra') }}</title>
-    <link rel="icon" type="image/png" href="{{ asset('systemicons/budgetraicon-modified.png') }}">
+    <link rel="icon" type="image/jpeg" href="{{ asset('systemicons/budgetra.jpg') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -15,6 +15,11 @@
     {{-- Basemap config for every Leaflet map in the app. Defines a global; the
          pages that draw maps load Leaflet itself and call it. --}}
     <script src="{{ asset('js/basemap.js') }}?v={{ filemtime(public_path('js/basemap.js')) }}"></script>
+
+    {{-- Keeps the signed-in traveler's avatar current after a profile save.
+         Needed app-wide, not just on /profile: the sidebar is @persist'ed and
+         your review rows live on attraction pages. --}}
+    <script src="{{ asset('js/avatar-sync.js') }}?v={{ filemtime(public_path('js/avatar-sync.js')) }}"></script>
     @livewireStyles
     @stack('styles')
     <script>
@@ -65,15 +70,9 @@
     </script>
 </head>
 @php
-    $userTheme = auth()->user()->theme ?? 'daylight';
+    $userTheme = auth()->user()->theme ?? 'original';
 @endphp
 <body class="dashboard-body" data-theme="{{ $userTheme }}">
-    @if ($userTheme === 'auto')
-    <script>
-        document.body.setAttribute('data-theme',
-            window.matchMedia('(prefers-color-scheme: dark)').matches ? 'nightflight' : 'daylight');
-    </script>
-    @endif
     <div class="dashboard-wrapper" id="dashWrapper">
         <x-sidebar :active="$active ?? ''" />
         <div class="dash-main">

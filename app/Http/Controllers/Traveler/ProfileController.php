@@ -45,7 +45,11 @@ class ProfileController extends Controller
         $validated = $request->validate([
             'first_name'     => 'required|string|max:100',
             'last_name'      => 'required|string|max:100',
-            'profile_photo'  => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
+            // Kilobytes: 5120 is the 5 MB the avatar's + button advertises and
+            // that budgetraPreviewAvatar() checks before uploading. It was
+            // 2048 while the page said 5 MB, so a 3 MB photo uploaded in full
+            // and was then thrown away.
+            'profile_photo'  => 'nullable|image|mimes:jpeg,png,jpg,webp|max:5120',
         ]);
 
         // build full_name from parts, preserving any existing middle name
@@ -66,6 +70,25 @@ class ProfileController extends Controller
         }
 
         $user->update($validated);
+
+        // The page posts this form with fetch() so the avatar can change in
+        // place — on this card, in the @persist'ed sidebar, and on any review
+        // of yours — without a reload. Everything the browser has to repaint
+        // goes back in the payload; the plain-form path below is untouched and
+        // still works with JavaScript off.
+        if ($request->expectsJson()) {
+            return response()->json([
+                'photo_url' => $user->profile_photo
+                    ? Storage::url($user->profile_photo)
+                    : null,
+                'full_name' => $user->full_name,
+                'initials'  => collect(explode(' ', $user->full_name ?? ''))
+                    ->filter()
+                    ->take(2)
+                    ->map(fn ($part) => mb_strtoupper(mb_substr($part, 0, 1)))
+                    ->implode(''),
+            ]);
+        }
 
         return back()->with('success', 'Profile updated successfully.');
     }

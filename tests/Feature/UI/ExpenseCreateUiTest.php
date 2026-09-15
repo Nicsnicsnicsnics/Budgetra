@@ -16,7 +16,21 @@ class ExpenseCreateUiTest extends TestCase
     public function test_expense_create_page_loads(): void
     {
         $user = User::factory()->create();
-        $this->actingAs($user)->get('/expenses/create')->assertStatus(200)->assertSee('Scan Your Receipt');
+        Trip::factory()->create(['user_id' => $user->id]);
+
+        $this->actingAs($user)->get('/expenses/create')
+            ->assertStatus(200)
+            ->assertSee('Add Expense')
+            ->assertSee('Upload a receipt to auto-fill the details below', false);
+    }
+
+    public function test_expense_create_prompts_to_plan_a_trip_when_there_are_none(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->get('/expenses/create')
+            ->assertStatus(200)
+            ->assertSee('No trips planned yet');
     }
 
     public function test_expense_create_preselects_trip_from_query_param(): void

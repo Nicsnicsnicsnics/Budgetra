@@ -15,7 +15,7 @@
     </div>
 
     <div class="admin-sidebar-brand">
-        <img src="{{ asset('systemicons/budgetraicon-modified.png') }}" alt="Budgetra" class="admin-sidebar-logo">
+        <img src="{{ asset('systemicons/budgetra.jpg') }}" alt="Budgetra" class="admin-sidebar-logo">
         <div class="admin-sidebar-brand-text">
             <div class="admin-sidebar-name">Budgetra</div>
         </div>

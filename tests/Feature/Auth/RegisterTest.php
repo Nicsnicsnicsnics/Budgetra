@@ -17,15 +17,22 @@ class RegisterTest extends TestCase
     public function test_user_can_register_with_valid_data(): void
     {
         $response = $this->post('/register', [
-            'full_name'             => 'Kent Pielago',
+            'first_name'            => 'Kent',
+            'last_name'             => 'Pielago',
             'email'                 => 'kent@example.com',
             'password'              => 'password123',
             'password_confirmation' => 'password123',
         ]);
 
-        $response->assertRedirect(route('dashboard'));
-        $this->assertDatabaseHas('users', ['email' => 'kent@example.com', 'role' => 'traveler']);
-        $this->assertAuthenticated();
+        // Registering hands the traveller to the login screen rather than
+        // signing them in, so they arrive as a guest with the account created.
+        $response->assertRedirect(route('login'));
+        $this->assertDatabaseHas('users', [
+            'email'     => 'kent@example.com',
+            'role'      => 'traveler',
+            'full_name' => 'Kent Pielago',
+        ]);
+        $this->assertGuest();
     }
 
     public function test_register_fails_with_duplicate_email(): void
@@ -33,7 +40,8 @@ class RegisterTest extends TestCase
         User::factory()->create(['email' => 'taken@example.com']);
 
         $response = $this->post('/register', [
-            'full_name'             => 'Someone',
+            'first_name'            => 'Some',
+            'last_name'             => 'One',
             'email'                 => 'taken@example.com',
             'password'              => 'password123',
             'password_confirmation' => 'password123',
@@ -46,7 +54,8 @@ class RegisterTest extends TestCase
     public function test_register_fails_with_mismatched_passwords(): void
     {
         $response = $this->post('/register', [
-            'full_name'             => 'Test User',
+            'first_name'            => 'Test',
+            'last_name'             => 'User',
             'email'                 => 'test@example.com',
             'password'              => 'password123',
             'password_confirmation' => 'different',
@@ -59,7 +68,8 @@ class RegisterTest extends TestCase
     public function test_register_fails_with_short_password(): void
     {
         $response = $this->post('/register', [
-            'full_name'             => 'Test User',
+            'first_name'            => 'Test',
+            'last_name'             => 'User',
             'email'                 => 'test@example.com',
             'password'              => 'short',
             'password_confirmation' => 'short',

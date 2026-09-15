@@ -257,9 +257,9 @@ class SavedTrips extends Component
             // place it goes to, and searching for the place should still find it.
             ->when($this->search !== '', function ($q) {
                 $term = '%' . str_replace('%', '\%', $this->search) . '%';
-                $q->where(fn ($w) => $w->where('destination', 'ilike', $term)
-                                       ->orWhere('trip_name', 'ilike', $term)
-                                       ->orWhere('leg2_destination', 'ilike', $term));
+                $q->where(fn ($w) => $w->whereLike('destination', $term, caseSensitive: false)
+                                       ->orWhereLike('trip_name', $term, caseSensitive: false)
+                                       ->orWhereLike('leg2_destination', $term, caseSensitive: false));
             })
             ->withSum('expenses', 'amount')
             ->withCount('groupMembers')

@@ -54,7 +54,7 @@
     </div>
 
     <div class="sidebar-brand" style="display:flex;align-items:center;gap:10px;padding:4px 16px 14px;">
-        <img src="{{ asset('systemicons/budgetraicon-modified.png') }}" alt="Budgetra"
+        <img src="{{ asset('systemicons/budgetra.jpg') }}" alt="Budgetra"
              style="width:38px;height:38px;border-radius:10px;object-fit:contain;flex-shrink:0;">
         <span class="sidebar-link-label" style="font-size:18px;font-weight:800;color:inherit;letter-spacing:0.01em;">Budgetra</span>
     </div>
@@ -85,9 +85,14 @@
                 @if ($link['key'] === 'profile')
                     @if (auth()->user()?->profile_photo)
                     <img src="{{ Illuminate\Support\Facades\Storage::url(auth()->user()->profile_photo) }}"
-                         alt="Profile" class="sidebar-profile-avatar">
+                         alt="Profile" class="sidebar-profile-avatar" data-user-avatar>
                     @else
-                    <span class="sidebar-profile-avatar sidebar-profile-avatar-initials">{{ $profileInitials }}</span>
+                    {{-- data-user-avatar lets avatar-sync.js repaint this after a
+                         profile save. It has to: @persist means wire:navigate
+                         never re-renders the sidebar, so without it the old
+                         picture survives the rest of the session. --}}
+                    <span class="sidebar-profile-avatar sidebar-profile-avatar-initials"
+                          data-user-avatar data-avatar-img-class="sidebar-profile-avatar">{{ $profileInitials }}</span>
                     @endif
                 @else
                 <i class="{{ $link['icon'] }}"></i>

@@ -65,30 +65,19 @@
 <div class="card"><div class="card-body">
     <h2 style="font-size:15px;font-weight:700;margin:0 0 14px;color:var(--dark);">Theme</h2>
 
-    <div class="theme-swatch-grid" role="radiogroup" aria-label="Theme" id="themeGrid" data-current-theme="{{ $user->theme ?? 'daylight' }}">
+    <div class="theme-swatch-grid" role="radiogroup" aria-label="Theme" id="themeGrid" data-current-theme="{{ $user->theme ?? 'original' }}">
 
         @foreach ([
             'original'          => 'Original — the classic Budgetra brown and cream',
-            'daylight'          => 'Daylight — bright, sky-blue, easy on the eyes outdoors',
             'nightflight'       => 'Nightflight — deep navy, easy on the eyes at night',
-            'terracotta'        => 'Terracotta Trail — warm clay and sand, adventure-trip feel',
-            'retro-wanderlust'  => 'Retro Wanderlust — aged-paper cream and petrol teal, a vintage travel-poster feel',
-            'sakura-bloom'      => 'Sakura Bloom — soft blossom pink and warm ink charcoal, delicate and seasonal',
         ] as $value => $label)
         <button class="theme-swatch" role="radio" title="{{ $label }}" aria-label="{{ $label }}"
-                aria-checked="{{ ($user->theme ?? 'daylight') === $value ? 'true' : 'false' }}"
+                aria-checked="{{ ($user->theme ?? 'original') === $value ? 'true' : 'false' }}"
                 data-theme-choice="{{ $value }}" data-theme="{{ $value }}" type="button">
             <span class="theme-swatch-check"><svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg></span>
         </button>
         @endforeach
 
-        <button class="theme-swatch split" role="radio" title="Auto — follows your device's light/dark setting" aria-label="Auto — follows your device's light/dark setting"
-                aria-checked="{{ ($user->theme ?? 'daylight') === 'auto' ? 'true' : 'false' }}"
-                data-theme-choice="auto" type="button">
-            <span class="swatch-half" data-theme="daylight" style="background:var(--bg-white)"></span>
-            <span class="swatch-half" data-theme="nightflight" style="background:var(--bg-white)"></span>
-            <span class="theme-swatch-check"><svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg></span>
-        </button>
 
     </div>
 
@@ -102,16 +91,10 @@
     if (!grid) return;
 
     var cards = grid.querySelectorAll('[data-theme-choice]');
-    var media = window.matchMedia('(prefers-color-scheme: dark)');
-    var selection = grid.dataset.currentTheme || 'daylight';
-
-    function resolve(choice) {
-        if (choice !== 'auto') return choice;
-        return media.matches ? 'nightflight' : 'daylight';
-    }
+    var selection = grid.dataset.currentTheme || 'original';
 
     function reflect(choice) {
-        document.body.setAttribute('data-theme', resolve(choice));
+        document.body.setAttribute('data-theme', choice);
         cards.forEach(function (c) {
             c.setAttribute('aria-checked', String(c.dataset.themeChoice === choice));
         });
@@ -139,10 +122,6 @@
             reflect(selection);
             save(selection);
         });
-    });
-
-    media.addEventListener('change', function () {
-        if (selection === 'auto') reflect('auto');
     });
 })();
 </script>

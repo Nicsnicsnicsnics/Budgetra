@@ -1935,6 +1935,21 @@ class TripPlannerWizard extends Component
     // max_execution_time and fatal out. Once the deadline is hit we stop
     // trying further providers for this option and just report failure —
     // that option gets skipped same as any other provider failure.
+    /**
+     * Providers that already refused during this request.
+     *
+     * The refusals that actually happen here are not transient: an exhausted
+     * free-tier day (429) or a key with no billing (402) answers identically
+     * for every option that follows, in well under a second. generateItinerary()
+     * calls suggestItinerary() once per option against one shared ~100s budget,
+     * so re-asking a provider that just said no spends the later options' time
+     * on an answer already known. Private, so it lasts exactly one request and
+     * a provider that recovers is tried again on the next one.
+     *
+     * @var array<class-string, true>
+     */
+    private array $refusedThisRequest = [];
+
     private function suggestItinerary(array $args, ?float $deadline = null): ?array
     {
         $deadline ??= microtime(true) + 60;
@@ -1947,6 +1962,8 @@ class TripPlannerWizard extends Component
         // wasting a request+timeout on them before falling through to a
         // provider that actually works.
         foreach ([\App\Services\MistralService::class, \App\Services\OpenRouterService::class, \App\Services\GroqService::class, \App\Services\GeminiService::class, \App\Services\CerebrasService::class] as $serviceClass) {
+            if (isset($this->refusedThisRequest[$serviceClass])) continue;
+
             $remaining = $deadline - microtime(true);
             if ($remaining < 5) break;
 
@@ -1958,6 +1975,8 @@ class TripPlannerWizard extends Component
             if ($result) {
                 return $this->applyDepartureCost($result);
             }
+
+            $this->refusedThisRequest[$serviceClass] = true;
         }
         return null;
     }
