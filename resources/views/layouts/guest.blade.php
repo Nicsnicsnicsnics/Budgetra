@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Budgetra</title>
-    <link rel="icon" type="image/jpeg" href="{{ asset('systemicons/budgetra.jpg') }}">
+    <link rel="icon" type="image/png" href="{{ asset('systemicons/budgetraicon.png') }}?v={{ filemtime(public_path('systemicons/budgetraicon.png')) }}">
     {{-- Versioned like the app layouts: without it the browser serves whatever
      copy of style.css it already had, and every change to this page's styling
      needs a hard refresh before anyone sees it. --}}

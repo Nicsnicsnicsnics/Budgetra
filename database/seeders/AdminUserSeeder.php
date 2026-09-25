@@ -15,8 +15,6 @@ class AdminUserSeeder extends Seeder
                 'full_name'     => 'Budgetra Admin',
                 'password'      => Hash::make('password'),
                 'role'          => 'admin',
-                'currency_code' => 'PHP',
-                'currency_symbol' => '₱',
             ]
         );
 
@@ -26,8 +24,6 @@ class AdminUserSeeder extends Seeder
                 'full_name'     => 'Super Admin',
                 'password'      => Hash::make('testadmin123'),
                 'role'          => 'admin',
-                'currency_code' => 'PHP',
-                'currency_symbol' => '₱',
             ]
         );
     }

@@ -54,8 +54,7 @@ class ItineraryManagerTest extends TestCase
             ->test(ItineraryManager::class)
             ->call('selectTrip', $trip->id)
             ->call('openAddPinModal', 10.0, 120.0)
-            ->assertSet('showPinModal', true)
-            ->assertSet('momentBlockedMessage', '');
+            ->assertSet('showPinModal', true);
     }
 
     public function test_cannot_open_add_pin_modal_for_an_upcoming_trip(): void
@@ -71,8 +70,7 @@ class ItineraryManagerTest extends TestCase
             ->test(ItineraryManager::class)
             ->call('selectTrip', $trip->id)
             ->call('openAddPinModal', 10.0, 120.0)
-            ->assertSet('showPinModal', false)
-            ->assertSet('momentBlockedMessage', 'You can only post moments for ongoing trips.');
+            ->assertSet('showPinModal', false);
     }
 
     public function test_cannot_open_add_pin_modal_for_a_completed_trip(): void
@@ -88,8 +86,7 @@ class ItineraryManagerTest extends TestCase
             ->test(ItineraryManager::class)
             ->call('selectTrip', $trip->id)
             ->call('openAddPinModal', 10.0, 120.0)
-            ->assertSet('showPinModal', false)
-            ->assertSet('momentBlockedMessage', 'You can only post moments for ongoing trips.');
+            ->assertSet('showPinModal', false);
     }
 
     public function test_savePin_rejects_a_non_ongoing_trip_even_if_called_directly(): void
@@ -685,5 +682,141 @@ class ItineraryManagerTest extends TestCase
         $component = Livewire::actingAs($user)->test(ItineraryManager::class, ['tab' => 'moments']);
 
         $this->assertSame([], $component->get('timelineMoments'));
+    }
+
+    // ── The per-trip map's hint chip ────────────────────────────────
+
+    public function test_a_trip_that_has_not_started_says_so_on_the_map(): void
+    {
+        // The notice used to be a paragraph above the map, where it read as
+        // page furniture. It now sits over the map's lower-left corner, the
+        // way the all-trips overview map already carried its own.
+        $user = User::factory()->create();
+        $trip = Trip::factory()->create([
+            'user_id'    => $user->id,
+            'start_date' => now()->addDays(10)->toDateString(),
+            'end_date'   => now()->addDays(14)->toDateString(),
+        ]);
+
+        $html = $this->actingAs($user)->get("/moments?trip_id={$trip->id}")->getContent();
+
+        $this->assertStringContainsString('moments-trip-map-shell', $html);
+        $this->assertStringContainsString('moments-float-hint', $html);
+        $this->assertStringContainsString('moments can be added once it starts', $html);
+        // The positive copy belongs to the ongoing case only.
+        $this->assertStringNotContainsString('Click anywhere on the map to drop a pin', $html);
+    }
+
+    public function test_an_ongoing_trip_gets_the_invitation_in_the_same_chip(): void
+    {
+        // Same element, other branch — so the chip is not a dead-end that only
+        // ever renders the negative case.
+        $user = User::factory()->create();
+        $trip = $this->makeTrip($user);   // starts today => resolved_status 'active'
+
+        $html = $this->actingAs($user)->get("/moments?trip_id={$trip->id}")->getContent();
+
+        $this->assertStringContainsString('moments-float-hint', $html);
+        $this->assertStringContainsString('Click anywhere on the map to drop a pin', $html);
+        $this->assertStringNotContainsString('moments can be added once it starts', $html);
+    }
+
+    public function test_the_notice_sits_inside_the_map_shell_not_above_it(): void
+    {
+        // Ordering is the whole point: a chip rendered before the shell would
+        // be back to being a paragraph above the map.
+        $user = User::factory()->create();
+        $trip = $this->makeTrip($user);
+
+        $html = $this->actingAs($user)->get("/moments?trip_id={$trip->id}")->getContent();
+
+        $shell = strpos($html, 'moments-trip-map-shell');
+        $hint  = strpos($html, 'moments-float-hint');
+
+        $this->assertNotFalse($shell);
+        $this->assertNotFalse($hint);
+        $this->assertGreaterThan($shell, $hint, 'the hint escaped the map shell');
+    }
+
+    public function test_the_notice_cannot_swallow_a_map_click_or_cover_a_modal(): void
+    {
+        // Two separate hazards, both invisible until they bite:
+        //   - clicking the map is how a pin is dropped, so the chip must not
+        //     intercept a click meant for the map underneath it;
+        //   - Leaflet stacks its controls at z-index 1000 and this page's pin
+        //     modal is also 1000, so the chip has to outrank Leaflet without
+        //     escaping to float over the modal. isolation:isolate is what
+        //     keeps the raise local.
+        $user = User::factory()->create();
+        $trip = $this->makeTrip($user);
+
+        // The rules live in style.css, not the view: moments.blade.php has two
+        // mutually exclusive <style> blocks, one per mode, and the first cut of
+        // this put them in the overview one while the markup was in trip mode —
+        // so the chip rendered with no styling at all.
+        $css = file_get_contents(public_path('css/style.css'));
+
+        // Both shells open a stacking context, and both raise their chips.
+        $this->assertStringContainsString(
+            ".moments-trip-map-shell,
+.moments-overview-shell { isolation: isolate; }",
+            $css
+        );
+        $this->assertStringContainsString(
+            ".moments-trip-map-shell .moments-float-chip,
+"
+            . ".moments-overview-shell .moments-float-chip { z-index: 1001; pointer-events: none; }",
+            $css
+        );
+        // And the base chip classes must be reachable from trip mode too.
+        $this->assertStringContainsString('.moments-float-hint {', $css);
+        $this->assertStringContainsString('.moments-float-chip {', $css);
+    }
+
+    public function test_the_overview_map_notice_is_not_buried_under_the_tiles(): void
+    {
+        // The reported symptom was a notice that appeared only while zooming.
+        // Leaflet stacks tile panes at z-index 400 and controls at 1000, and
+        // .leaflet-container does not open a stacking context, so a chip with
+        // z-index:auto paints UNDER the tiles however late it sits in the DOM.
+        // A zoom animation re-transforms the panes and flashes it into view.
+        // The chip must therefore carry an explicit z-index above Leaflet's.
+        $user = User::factory()->create();
+        Trip::factory()->create([
+            'user_id'    => $user->id,
+            'start_date' => now()->addDays(10)->toDateString(),
+            'end_date'   => now()->addDays(14)->toDateString(),
+        ]);
+
+        $html = $this->actingAs($user)->get('/moments')->getContent();
+        $css  = file_get_contents(public_path('css/style.css'));
+
+        // Overview mode, no ongoing trip -> the notice renders.
+        $this->assertStringContainsString('moments-overview-shell', $html);
+        $this->assertStringContainsString(
+            'No ongoing trips yet — moments can be added once a trip starts',
+            $html
+        );
+
+        // ...and is raised above Leaflet rather than left at z-index:auto.
+        $this->assertStringContainsString('.moments-overview-shell { isolation: isolate; }', $css);
+        $this->assertStringContainsString(
+            '.moments-overview-shell .moments-float-chip { z-index: 1001; pointer-events: none; }',
+            $css
+        );
+    }
+
+    public function test_an_ongoing_trip_flips_the_overview_notice(): void
+    {
+        $user = User::factory()->create();
+        $this->makeTrip($user);   // starts today => ongoing
+
+        $html = $this->actingAs($user)->get('/moments')->getContent();
+
+        $this->assertStringContainsString('Click anywhere to post a Moment', $html);
+        $this->assertStringNotContainsString(
+            'No ongoing trips yet — moments can be added once a trip starts',
+            $html
+        );
     }
 }

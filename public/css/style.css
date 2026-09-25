@@ -50,6 +50,13 @@
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
   --shadow: 0 4px 16px rgba(0,0,0,0.10);
   --shadow-lg: 0 10px 40px rgba(0,0,0,0.14);
+  /* A surface that floats ABOVE a card, for popovers. On a light theme the
+     shadow does the separating and this can stay white; on a dark one a
+     shadow over a dark card separates nothing, so the surface itself has to
+     step up. See .card-menu. */
+  --surface-raised: #FFFFFF;
+  --menu-hover: #F3F4F6;
+  --menu-hover-danger: #FEF2F2;
   --radius: 12px;
   --radius-sm: 8px;
   --radius-lg: 20px;
@@ -75,6 +82,13 @@
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
   --shadow: 0 4px 16px rgba(0,0,0,0.10);
   --shadow-lg: 0 10px 40px rgba(0,0,0,0.14);
+  /* A surface that floats ABOVE a card, for popovers. On a light theme the
+     shadow does the separating and this can stay white; on a dark one a
+     shadow over a dark card separates nothing, so the surface itself has to
+     step up. See .card-menu. */
+  --surface-raised: #FFFFFF;
+  --menu-hover: #F3F4F6;
+  --menu-hover-danger: #FEF2F2;
 }
 /* :root above is the pre-theme fallback (unauthenticated pages etc).
    Every signed-in page renders one of these blocks explicitly via
@@ -110,6 +124,12 @@
   --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
   --shadow: 0 14px 32px rgba(0,0,0,.5);
   --shadow-lg: 0 14px 32px rgba(0,0,0,.5);
+  /* Lighter than --bg-white (#1C202B), which is also the card colour: a
+     popover painted in --bg-white on top of a card was invisible apart from
+     a 1px border, and no shadow can lift dark off dark. */
+  --surface-raised: #262B38;
+  --menu-hover: #2F3545;
+  --menu-hover-danger: rgba(248,113,113,.14);
 }
 /* Both remaining themes have a dark --sidebar-bg, so the sidebar's
    hardcoded rgba(255,255,255,…) text colors read correctly on both.
@@ -181,6 +201,22 @@ h1,h2,h3,h4,h5,h6 { font-weight: 700; line-height: 1.25; color: var(--dark); }
 .btn-lg { padding: 15px 32px; font-size: 16px; }
 .btn-block { width: 100%; }
 .btn-icon { width: 40px; height: 40px; padding: 0; border-radius: 50%; }
+
+/* ── Searching state, trip planner wizard ──────────
+   While a search runs the button shows the spinner alone. The label is
+   hidden rather than removed and the spinner is centred over it, so the
+   button keeps the width it had and nothing on the row shifts when it is
+   clicked. Same pattern as .report-btn on the dashboard.
+
+   Lives here rather than in the wizard because four steps use it and each
+   step has its own <style> block, only one of which is ever on the page. */
+.wiz-search-btn { position: relative; }
+.wiz-search-btn .wiz-search-spinner { display: none; }
+.wiz-search-btn.is-searching > :not(.wiz-search-spinner) { visibility: hidden; }
+.wiz-search-btn.is-searching .wiz-search-spinner {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+}
 
 /* ── Cards ─────────────────────────────────────── */
 .card {
@@ -623,44 +659,62 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
   accent-color: var(--primary);
 }
 .auth-terms-check a { color: var(--primary); }
+
+/* The brand mark, wherever it sits on a dark surface — the auth panels and
+   the sidebar header.
+   budgetraicon.png is a black line drawing on transparency, the same stock
+   the nav icons are cut from. Behind it is either a blurred photo under an
+   rgba(0,0,0,.25) scrim or --sidebar-bg (#3D2411 / #10131A); black on either
+   is barely a shape.
+   brightness(0) makes every opaque pixel black regardless of what it was,
+   then invert(1) turns that white; alpha is untouched, so the transparent
+   background stays transparent. Order matters: invert alone would depend on
+   the source colour.
+   One class rather than one per surface — the nav icons already drifted into
+   three copies of their own colour rule and this is the same shape of bug. */
+.brand-mark { filter: brightness(0) invert(1); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 
 /* ── Auth forms: two weights of "this field needs you" ──────────────────
    Scoped to the auth pages; the rest of the app's forms are a separate call.
-   Both weights are built from var(--danger), so the border, the icon, the
-   label and the message under the field are all the one red rather than four
-   near-misses. */
+   Both weights say it the same way — a red border, nothing painted inside the
+   box and no glow around it. They differ only in when they apply and whether
+   the label goes with them. */
 
 /* Weight one — a hint. You clicked into a required field that is still empty.
-   Nothing is wrong yet, so this is the border and the gutter icon only.
+   Nothing is wrong yet, so this is the border alone: not the label, not the
+   gutter icon, not a ring.
    :invalid does the work: a required field matches it while empty and stops
    matching the moment there is something valid in it, so the hint clears
    itself as you type. Email holds it until the address parses, which is the
-   same statement. */
+   same statement.
+
+   box-shadow:none is doing something, not nothing. .form-control:focus draws
+   a 3px brown ring on every focused field in the app; without this the field
+   would show a red border wearing a brown halo. */
 .auth-wrapper .form-control:required:focus:invalid {
   border-color: var(--danger);
-  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+  box-shadow: none;
 }
 
 /* Weight two — an error. A submit was actually refused, by the browser or by
-   the server. The red now holds with or without focus and the whole field
-   group carries it: label, border, icon, a wash behind the input and the
-   message below. This is what replaced the browser's "Please fill out this
-   field" bubble, so it has to carry that much on its own.
+   the server. The red holds with or without focus, but it stays on the OUTSIDE
+   of the field: the border marks it, and the label and the message below say
+   what is wrong. The inside of the box is left alone.
+   It used to carry a red wash behind the input and a red halo around it,
+   which made an empty field look filled in and put three reds on screen per
+   field. A border is enough to point at it.
    .is-invalid was already in both auth templates for server-side errors but
    had never been styled anywhere, so a rejected login marked its fields in
    the markup and then showed nothing at all. */
 .auth-wrapper .form-control.is-invalid,
 .auth-wrapper .form-control.is-invalid:focus {
   border-color: var(--danger);
-  background: rgba(220, 38, 38, 0.04);
-  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.16);
+  /* Same reason as the hint: otherwise clicking into a field that failed
+     gives it the standard brown focus ring. */
+  box-shadow: none;
 }
 .auth-wrapper .form-group:has(.form-control.is-invalid) .form-label {
-  color: var(--danger);
-}
-.auth-wrapper .input-wrapper:has(.form-control:required:focus:invalid) .input-icon,
-.auth-wrapper .input-wrapper:has(.form-control.is-invalid) .input-icon {
   color: var(--danger);
 }
 
@@ -678,19 +732,10 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
   font-family: "Font Awesome 6 Free"; font-weight: 900; font-size: 11px;
 }
 
-/* Derive the tints from the token where the browser can, so a theme that
-   moves --danger moves these with it instead of leaving hardcoded #DC2626
-   washes behind a red that is no longer that red. */
-@supports (color: color-mix(in srgb, red, blue)) {
-  .auth-wrapper .form-control:required:focus:invalid {
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 14%, transparent);
-  }
-  .auth-wrapper .form-control.is-invalid,
-  .auth-wrapper .form-control.is-invalid:focus {
-    background: color-mix(in srgb, var(--danger) 5%, var(--bg-white));
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 18%, transparent);
-  }
-}
+/* The @supports color-mix arm that used to live here is gone with the tints
+   it existed to derive. Everything red on these forms is now either
+   var(--danger) straight or nothing at all, so there is no blend left to
+   keep in step with the token. */
 
 /* Checkbox */
 .form-check { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 18px; }
@@ -787,6 +832,33 @@ body.dashboard-body {
 .sidebar-link:hover { background: rgba(255,255,255,0.08); color: #fff; }
 .sidebar-link.active { background: rgba(255,255,255,0.15); color: #fff; }
 .sidebar-link i { width: 18px; text-align: center; font-size: 15px; }
+
+/* Icons drawn from public/systemicons rather than from a font.
+
+   The PNGs are black silhouettes on transparency, which would be invisible
+   on the sidebar's dark --sidebar-bg. So the image is used as a MASK and the
+   element is filled with currentColor: the icon then takes whatever colour
+   its row already has — the muted white of a nav link, full white on hover
+   and active, and the #E23A4E of the logout row — exactly as the font glyph
+   it replaced did.
+
+   Sizing in em (not px) is what keeps it interchangeable with a glyph: the
+   18px gutter and 15px/16px sizes above, and the inline font-size on each
+   empty-state icon, all keep working untouched. */
+.app-icon {
+  display: inline-block;
+  width: 1em; height: 1em;
+  background-color: currentColor;
+  -webkit-mask: var(--app-icon) center / contain no-repeat;
+          mask: var(--app-icon) center / contain no-repeat;
+  vertical-align: -0.125em;
+}
+
+/* Without mask support the rule above would paint a solid currentColor
+   block — a filled square where an icon belongs. Better to show nothing. */
+@supports not ((-webkit-mask: none) or (mask: none)) {
+  .app-icon { background-color: transparent; }
+}
 .sidebar-profile-avatar {
   width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
   object-fit: cover; display: flex; align-items: center; justify-content: center;
@@ -848,6 +920,50 @@ body.dashboard-body {
   padding: 0; cursor: pointer; transition: color 0.2s, background 0.2s;
 }
 .sidebar-toggle-btn:hover { color: #fff; background: rgba(255,255,255,0.08); }
+
+/* The collapse chevron points left when the sidebar is open and right when it
+   is shut. Both PNGs are carried on the element and CSS chooses between them,
+   keyed off the .sidebar-collapsed class the toggle already sets on
+   #dashWrapper.
+
+   This used to be three separate `icon.className = ...` assignments — two in
+   the sidebar's own script, one in the collapse_sidebar block in
+   layouts/app.blade.php — and the third was missed the last time the icons
+   changed, so a redirect that flashed that key left a stale chevron behind.
+   One rule replaces all three, and reassigning className is now what would
+   break it, since that would drop the .app-icon class. */
+#sidebarToggleIcon { --app-icon: var(--chevron-left); }
+.sidebar-collapsed #sidebarToggleIcon { --app-icon: var(--chevron-right); }
+
+/* ── The kebab menu on a trip card ─────────────────
+   Was inline, and every colour in it was written for the light theme: the
+   panel used --bg-white, which on nightflight is the card colour underneath
+   it, so the menu read as a floating list of text with a hairline round it.
+   Delete Trip was #ba1a1a with a #fff5f5 hover — a pale pink slab on a dark
+   card. All four colours are tokens now, and --danger is already tuned per
+   theme for contrast. */
+.card-menu {
+  position: absolute; top: 40px; right: 0; z-index: 100;
+  min-width: 170px; overflow: hidden;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+}
+.card-menu button {
+  width: 100%; background: none; border: none;
+  padding: 11px 16px; font-size: 13px; font-weight: 500;
+  color: var(--dark); cursor: pointer;
+  display: flex; align-items: center; gap: 9px;
+  text-align: left; font-family: inherit;
+  transition: background .15s ease;
+}
+/* A divider between items, not under the last one. */
+.card-menu button + button { border-top: 1px solid var(--border); }
+.card-menu button:hover { background: var(--menu-hover); }
+.card-menu button i { font-size: 12px; color: var(--muted); }
+.card-menu-danger, .card-menu-danger i { color: var(--danger); }
+.card-menu-danger:hover { background: var(--menu-hover-danger); }
 
 .sidebar-divider { height: 1px; background: rgba(255,255,255,.08); margin: 6px 12px; }
 .sidebar-divider-brand { margin-left: 24px; margin-right: 24px; }
@@ -1057,6 +1173,23 @@ button:disabled { opacity: 0.65; cursor: not-allowed; }
 .empty-state-swap[data-empty-when="skipped"] { display: none; }
 :root[data-profile-skipped] .empty-state-swap[data-empty-when="profile"] { display: none; }
 :root[data-profile-skipped] .empty-state-swap[data-empty-when="skipped"] { display: contents; }
+/* The sidebar's Profile link, by the same trick and for a related reason.
+   Both destinations are rendered; this picks one. The sidebar is @persist'ed
+   so a server-chosen href would freeze for the whole SPA session, but
+   data-has-profile on :root is refreshed by Livewire on every wire:navigate,
+   so the choice stays current without the markup ever being re-rendered.
+
+   display:contents for the same reason as above, and one more: .sidebar-link
+   is display:flex and belongs to .sidebar-bottom-links' own layout, including
+   the .sidebar-collapsed rules — a real wrapper box would come between them.
+
+   Default shows /profile, so the established case is what survives if this
+   file never arrives. */
+.sidebar-profile-swap { display: contents; }
+.sidebar-profile-swap[data-profile-when="setup"] { display: none; }
+:root:not([data-has-profile]) .sidebar-profile-swap[data-profile-when="ready"] { display: none; }
+:root:not([data-has-profile]) .sidebar-profile-swap[data-profile-when="setup"] { display: contents; }
+
 .empty-state-skip {
   margin-top: 18px; background: none; border: none; padding: 0;
   font-family: inherit; font-size: 13px; font-weight: 600;
@@ -1216,8 +1349,94 @@ button:disabled { opacity: 0.65; cursor: not-allowed; }
 }
 .alert-item-icon.danger { background: #FEF2F2; color: var(--danger); }
 .alert-item-icon.warning { background: var(--secondary-light); color: var(--secondary-dark); }
+/* The other two arms notification_meta() can return. Without them a
+   trip_reminder or a savings notification drew an icon on no tile at all. */
+.alert-item-icon.success { background: rgba(22,163,74,0.14); color: var(--success); }
+.alert-item-icon.neutral { background: var(--border-light); color: var(--muted); }
 .alert-item-title { font-size: 13px; font-weight: 600; color: var(--text); }
 .alert-item-sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+/* ── Tabbed page panel ─────────────────────────────
+   The body of a browser-tab page: Saved Trips, Saving Goals, Multi Trips.
+   All three had this as three copies of the same inline style, differing
+   only in padding.
+
+   The floor height is the point of it. Sized to sit with the notifications
+   card so the four pages don't jump as you switch between them, and so a
+   page holding one trip renders a proper panel instead of a stubby box.
+   min-height, not height: past the floor the panel grows with its content,
+   and justify-content:center then behaves like ordinary flow. Below it, the
+   content centres rather than hugging the top edge.
+
+   The 0 on the top-left radius is load-bearing — the tab strip sits on that
+   corner and a rounded one would show a notch under the active tab. */
+.tab-panel {
+  background: var(--bg-white);
+  border: 1.5px solid var(--border);
+  border-radius: 0 16px 16px 16px;
+  padding: 44px 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+  min-height: 680px;
+}
+@media (max-width: 900px) { .tab-panel { min-height: 560px; padding: 32px 20px; } }
+
+/* ── Layout for elements Alpine toggles with x-show ──
+   x-show hides by setting an inline display:none and reveals by calling
+   style.removeProperty('display') — which takes any inline display the
+   element already had with it. An x-show'd element whose layout lives in a
+   style attribute therefore comes back as plain flow: the empty state's icon
+   snaps hard left, the heading is centred only by text-align, and the
+   paragraph drifts off on its own. savings/index.blade.php hit this first and
+   fixed it with .sg-empty; these are the same rules, shared.
+
+   Anything toggled by x-show gets its display from a class. Always. */
+.tab-pane { display: flex; flex-direction: column; }
+.tab-empty {
+  min-height: 360px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center; padding: 40px 20px;
+}
+.tab-pager { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding-top: 20px; }
+.tab-pager-gap { width: 38px; display: inline-block; text-align: center; color: var(--muted); font-size: 13px; font-weight: 700; }
+
+/* ── Moments: chips floated over a map ─────────────
+   Shared by the all-trips overview map and the per-trip map. They live here
+   rather than in moments.blade.php because that view has two mutually
+   exclusive <style> blocks, one per mode, and both maps need these. */
+.moments-float-chip {
+  position: absolute; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border-radius: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.14); max-width: calc(100% - 32px);
+}
+.moments-float-hint {
+  bottom: 16px; left: 16px; background: rgba(28,20,15,.80); color: #fff;
+  padding: 10px 16px; font-size: 12px; display: flex; align-items: center; gap: 8px;
+}
+/* Both map shells. position:relative anchors the chips to the map rather than
+   the page; .moments-overview-shell already had that, .moments-trip-map-shell
+   is declared here.
+
+   The z-index pair below is what actually makes the chips visible, and it is
+   not optional. Leaflet stacks its tile panes at z-index 400 and its controls
+   at 1000, and .leaflet-container is position:relative with z-index:auto — so
+   it does NOT open a stacking context and those values compete directly with
+   the chips. A positioned element with z-index:auto paints BELOW anything with
+   a positive z-index in the same context, whatever the DOM order, so a chip
+   with no z-index sits under the map tiles and is invisible. It flickers into
+   view during a zoom only because Leaflet re-transforms the panes mid-anim.
+
+   isolation:isolate is the other half: this page's pin modal is also z-index
+   1000, so without a stacking context on the shell the raised chip would float
+   over that modal. Isolating keeps the raise local to the map. */
+.moments-trip-map-shell { position: relative; border-radius: 12px; overflow: hidden; }
+.moments-trip-map-shell,
+.moments-overview-shell { isolation: isolate; }
+/* Clicking either map is how a pin is dropped — a notice must never swallow a
+   click meant for the map underneath it. */
+.moments-trip-map-shell .moments-float-chip,
+.moments-overview-shell .moments-float-chip { z-index: 1001; pointer-events: none; }
 
 /* Recent expenses */
 .expense-row {
@@ -1225,14 +1444,19 @@ button:disabled { opacity: 0.65; cursor: not-allowed; }
   padding: 12px 0; border-bottom: 1px solid var(--border-light);
 }
 .expense-row:last-child { border-bottom: none; }
+/* --primary-light / --primary rather than the --orange pair: --orange and
+   --orange-light have no nightflight override, so the tile stayed a cream
+   swatch on a dark card. These two invert with the theme. */
 .expense-row-icon {
   width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  font-size: 14px; background: var(--orange-light); color: var(--orange);
+  font-size: 14px; background: var(--primary-light); color: var(--primary);
 }
 .expense-row-name { font-size: 14px; font-weight: 500; flex: 1; }
 .expense-row-time { font-size: 11px; color: var(--muted); margin-top: 2px; }
-.expense-row-amt { font-size: 14px; font-weight: 700; color: var(--danger); }
+/* Not --danger: a list of ordinary expenses in red reads as a list of
+   errors. Red is for the meters, where it means over budget. */
+.expense-row-amt { font-size: 14px; font-weight: 700; color: var(--dark); }
 
 /* Budget breakdown table */
 .budget-table { width: 100%; border-collapse: collapse; }

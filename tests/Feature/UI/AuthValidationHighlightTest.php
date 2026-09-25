@@ -34,59 +34,103 @@ class AuthValidationHighlightTest extends TestCase
         }
     }
 
-    public function test_the_hint_is_the_border_and_icon_only(): void
+    public function test_the_hint_is_the_border_and_nothing_else(): void
     {
         $css = $this->css();
 
         // Clicking into an empty required field is not an error yet, so the
-        // label and the field background stay as they were.
+        // label stays as it was — and nothing is drawn inside the box or
+        // around it.
         $this->assertMatchesRegularExpression(
-            '/\.auth-wrapper \.form-control:required:focus:invalid \{\s*border-color: var\(--danger\);/',
-            $css
-        );
-        $this->assertStringContainsString(
-            '.auth-wrapper .input-wrapper:has(.form-control:required:focus:invalid) .input-icon,',
+            '/\.auth-wrapper \.form-control:required:focus:invalid \{\s*border-color: var\(--danger\);\s*box-shadow: none;\s*\}/',
             $css
         );
         $this->assertDoesNotMatchRegularExpression(
             '/:has\(\.form-control:required:focus:invalid\) \.form-label/',
             $css
         );
-    }
-
-    public function test_a_refused_submit_marks_the_whole_field_group(): void
-    {
-        $css = $this->css();
-
-        // Label, border, wash and icon, so a form of six fields can be scanned
-        // for the ones still wanting attention.
-        $this->assertStringContainsString('.auth-wrapper .form-group:has(.form-control.is-invalid) .form-label', $css);
-        $this->assertStringContainsString('.auth-wrapper .input-wrapper:has(.form-control.is-invalid) .input-icon', $css);
-        $this->assertMatchesRegularExpression(
-            '/\.auth-wrapper \.form-control\.is-invalid,\s*\.auth-wrapper \.form-control\.is-invalid:focus \{\s*border-color: var\(--danger\);\s*background:/s',
+        // The gutter icon lives inside the field, so it is left alone too.
+        $this->assertStringNotContainsString(
+            ':has(.form-control:required:focus:invalid) .input-icon',
             $css
         );
     }
 
-    public function test_the_error_weight_is_heavier_than_the_hint(): void
+    public function test_neither_weight_lets_the_default_focus_ring_through(): void
     {
-        preg_match_all('/box-shadow: 0 0 0 3px rgba\(220, 38, 38, ([\d.]+)\)/', $this->css(), $m);
+        // This is why box-shadow:none is written out rather than simply
+        // omitted. .form-control:focus puts a 3px brown ring on every focused
+        // field in the app; both auth states out-specify it, so dropping the
+        // declaration would leave a red border wearing a brown halo.
+        $css = $this->css();
 
-        // Two weights only mean something if they actually differ.
-        $this->assertCount(2, $m[1]);
-        $this->assertGreaterThan((float) $m[1][0], (float) $m[1][1]);
+        $this->assertStringContainsString(
+            '.form-control:focus { border-color: var(--primary); box-shadow: 0 0 0 3px',
+            $css,
+            'the default focus ring this guards against has moved'
+        );
+        $this->assertSame(
+            2,
+            preg_match_all('/\s{2}box-shadow: none;/', $css),
+            'both auth error states must cancel the default focus ring'
+        );
     }
 
-    public function test_the_tints_follow_the_token_where_they_can(): void
+    public function test_a_refused_submit_marks_the_border_and_the_label(): void
     {
-        // A theme that moves --danger must not leave hardcoded #DC2626 washes
-        // sitting behind a red that is no longer that red.
-        $this->assertStringContainsString(
-            'background: color-mix(in srgb, var(--danger) 5%, var(--bg-white));',
-            $this->css()
+        $css = $this->css();
+
+        // It used to paint the inside too — a wash behind the input, a halo
+        // around it and a red gutter icon — which made an empty field look
+        // filled in. The marking now stays outside the box: the border points
+        // at the field, the label names it, the message says why.
+        $this->assertStringContainsString('.auth-wrapper .form-group:has(.form-control.is-invalid) .form-label', $css);
+        $this->assertMatchesRegularExpression(
+            '/\.auth-wrapper \.form-control\.is-invalid,\s*\.auth-wrapper \.form-control\.is-invalid:focus \{\s*border-color: var\(--danger\);[^}]*box-shadow: none;\s*\}/s',
+            $css
         );
-        // ...with the plain rgba() still there for anything without color-mix.
-        $this->assertStringContainsString('background: rgba(220, 38, 38, 0.04);', $this->css());
+        // No wash, no coloured ring.
+        $this->assertDoesNotMatchRegularExpression(
+            '/\.auth-wrapper \.form-control\.is-invalid[^{]*\{[^}]*background/s',
+            $css
+        );
+        $this->assertStringNotContainsString(
+            '.auth-wrapper .input-wrapper:has(.form-control.is-invalid) .input-icon',
+            $css
+        );
+    }
+
+    public function test_the_two_weights_are_still_distinguishable(): void
+    {
+        $css = $this->css();
+
+        // Both draw the same red border now, so neither shadow depth nor a
+        // tint separates them. What does: the hint needs focus and goes no
+        // further than the border; the error holds with or without focus and
+        // takes the label with it.
+        $this->assertSame(
+            0,
+            preg_match_all('/box-shadow: 0 0 0 3px rgba\(220, 38, 38, [\d.]+\)/', $css),
+            'no red ring should survive on the auth forms'
+        );
+        $this->assertStringContainsString(':has(.form-control.is-invalid) .form-label', $css);
+        $this->assertDoesNotMatchRegularExpression(
+            '/:has\(\.form-control:required:focus:invalid\) \.form-label/',
+            $css
+        );
+    }
+
+    public function test_nothing_is_tinted_so_nothing_can_drift_from_the_token(): void
+    {
+        $css = $this->css();
+
+        // Every red on these forms is var(--danger) straight now — no blends,
+        // no hardcoded #DC2626 washes that a theme could leave behind when it
+        // moves the token. The @supports arm that derived those tints went
+        // with them.
+        $this->assertStringNotContainsString('color-mix(in srgb, var(--danger) 14%', $css);
+        $this->assertStringNotContainsString('color-mix(in srgb, var(--danger) 5%', $css);
+        $this->assertStringNotContainsString('rgba(220, 38, 38,', $css);
     }
 
     public function test_the_validation_message_is_finally_styled(): void

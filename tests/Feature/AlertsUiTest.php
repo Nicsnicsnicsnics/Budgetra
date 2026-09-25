@@ -25,7 +25,7 @@ class AlertsUiTest extends TestCase
             'type' => 'budget_warning', 'message' => 'Food is at 50% of its budget', 'is_read' => false,
         ]);
 
-        $this->actingAs($user)->get('/alerts')
+        $this->actingAs($user)->get('/notifications')
             ->assertStatus(200)
             ->assertSee('Food is at 50% of its budget');
     }
@@ -39,9 +39,43 @@ class AlertsUiTest extends TestCase
         // only exists once those have been cleared out.
         Notification::where('user_id', $user->id)->delete();
 
-        $this->actingAs($user)->get('/alerts')
+        $this->actingAs($user)->get('/notifications')
             ->assertStatus(200)
             ->assertSee('All caught up!');
+    }
+
+    /**
+     * This page was /alerts until the URL was brought in line with the name the
+     * sidebar, the model and the notifications table have always used.
+     */
+    public function test_the_old_alerts_url_still_gets_you_there(): void
+    {
+        // Bookmarks, and one thing specific to this app: the sidebar sits
+        // inside @persist, so a tab that was already open keeps the frozen
+        // /alerts href until a full page reload.
+        $this->actingAs(User::factory()->create())
+            ->get('/alerts')
+            ->assertRedirect('/notifications');
+    }
+
+    public function test_the_sidebar_still_carries_the_unread_badge(): void
+    {
+        // The badge is gated on the sidebar link's 'key', which the rename
+        // changed. Nothing else asserts that gate, and if the key and the
+        // comparison drift apart the badge just quietly stops rendering.
+        $user = User::factory()->create();
+        \App\Models\UserProfile::create(['user_id' => $user->id]);
+        $trip = Trip::factory()->create(['user_id' => $user->id]);
+        Notification::create([
+            'user_id' => $user->id, 'trip_id' => $trip->id,
+            'type' => 'budget_warning', 'message' => 'Unread one', 'is_read' => false,
+        ]);
+
+        $html = $this->actingAs($user)->get('/notifications')->getContent();
+
+        $this->assertStringContainsString('href="' . url('/notifications') . '"', $html);
+        $this->assertStringContainsString('data-segment="notifications"', $html);
+        $this->assertStringContainsString('sidebar-badge', $html);
     }
 
     public function test_badge_shows_unread_count(): void

@@ -19,6 +19,55 @@ class Trip extends Model
         'leg2_flight_selection', 'leg2_hotel_selection', 'leg2_venue_selection', 'leg2_attraction_selection',
     ];
 
+    /**
+     * Scenery shown on a trip card that has no photo of its own.
+     *
+     * Deliberately no hotels, inns or apartments: the whole reason a trip
+     * lands here is that no accommodation was picked, so a hotel lobby would
+     * claim something the trip does not have.
+     */
+    public const FALLBACK_COVERS = [
+        'beach.jpg', 'international 1.jpg', 'nature.jpg', 'international 2.jpg',
+        'adventure.jpg', 'international 3.jpg', 'historical.jpg', 'international 4.jpg',
+        'relaxation.jpg', 'international 5.jpg', 'resort.jpg', 'international 6.jpg',
+        'museums.jpg', 'international 7.jpg', 'nightlife.jpg', 'international 8.jpg',
+        'shopping.jpg', 'international 9.jpg', 'foodtrip.jpg', 'international 10.jpg',
+    ];
+
+    /**
+     * The picture for this trip's card.
+     *
+     * cover_image is whatever the wizard managed to capture — the chosen
+     * hotel's photo, or failing that the first attraction's. A trip planned
+     * without accommodation has neither, and the card fell through to a bare
+     * gradient that read as a half-loaded image rather than a design.
+     *
+     * The stand-in is chosen by trip id, not at random. A genuine random pick
+     * would hand the same card a different photo on every Livewire refresh,
+     * so a board would reshuffle itself while you were looking at it. Keying
+     * off the id also means one trip looks the same on Saved Trips, the Hub
+     * and its savings goal, and that neighbouring trips — consecutive ids —
+     * never draw the same picture.
+     */
+    public function coverImageUrl(): string
+    {
+        if ($this->cover_image) {
+            return $this->cover_image;
+        }
+
+        // Drafts keep their own deliberately indistinct image; the card blurs
+        // itself on top of it.
+        if ($this->status === 'draft') {
+            return asset('stockimages/draftimage.jpg');
+        }
+
+        $pool = self::FALLBACK_COVERS;
+        $file = $pool[abs((int) $this->id) % count($pool)];
+
+        // Several of these filenames carry a space.
+        return asset('stockimages/' . rawurlencode($file));
+    }
+
     // Generates an 8-char code from an alphabet without 0/O/1/I so it's
     // never ambiguous when a traveler reads it aloud or retypes it.
     public static function generateUniqueShareCode(): string

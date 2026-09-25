@@ -2,8 +2,9 @@
 namespace App\Http\Controllers\Traveler;
 
 use App\Http\Controllers\Controller;
-use App\Models\Attraction;
 use App\Models\Expense;
+use App\Models\Itinerary;
+use App\Models\SavingsGoal;
 use App\Models\Trip;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
@@ -22,23 +23,30 @@ class DashboardController extends Controller
         'Emergency Expenses' => '#2563EB',
     ];
 
+    // Notification types the dashboard's attention panel surfaces: the four
+    // that describe something the traveler may still need to act on. The other
+    // eight are confirmations of things they just did ("Trip saved", "Added as
+    // a travel companion") and belong on /notifications, not on a panel whose
+    // whole claim is that it needs attention.
+    private const ATTENTION_TYPES = [
+        'budget_alert', 'budget_warning', 'trip_reminder', 'itinerary_reminder',
+    ];
+
     public function __invoke()
     {
         $user = auth()->user();
-        $recommended = Attraction::withCount(['reviews' => fn ($q) => $q->where('status', 'active')])
-            ->orderByDesc('rating')->limit(4)->get();
 
         if (!$user) {
             return view('traveler.dashboard.index', [
                 'trips' => collect(), 'totalBudget' => 0, 'totalCost' => 0, 'totalSpent' => 0,
-                'recommended' => $recommended, 'categorySpend' => [], 'monthlySpend' => [],
+                'categorySpend' => [], 'monthlySpend' => [],
                 'activeTrips' => collect(), 'nextDeparture' => null, 'tripChips' => [],
-            ]);
+            ] + self::emptyScreenData());
         }
 
-        return view('traveler.dashboard.index', array_merge(
-            $this->buildData($user), compact('recommended')
-        ));
+        $data = $this->buildData($user);
+
+        return view('traveler.dashboard.index', $data + $this->screenData($user, $data['activeTrips']));
     }
 
     public function downloadReport()
@@ -173,4 +181,110 @@ class DashboardController extends Controller
             ->all();
     }
 
+    /**
+     * The four panels that exist only on screen.
+     *
+     * Deliberately not folded into buildData(): that method feeds the PDF
+     * report as well (downloadReport()), and report-pdf.blade.php renders none
+     * of this. Putting these queries there would run all five on every report
+     * download to produce data nothing reads.
+     */
+    private function screenData($user, $activeTrips): array
+    {
+        $activeTripIds = $activeTrips->pluck('id')->all();
+
+        // "Today" in the traveler's own terms. itinerary.start_datetime is a
+        // naive datetime column, and ItineraryManager::getDayItemsProperty()
+        // filters it with whereDate() against a date the calendar produces in
+        // local terms — so this has to ask the same question, or the panel and
+        // the calendar disagree about which day it is for up to eight hours a
+        // day. SendItineraryReminders' now()-based window is UTC on purpose
+        // and is not the rule to copy here.
+        $today = Carbon::today(display_tz())->toDateString();
+
+        $itinerary = fn () => Itinerary::with('trip')->whereIn('trip_id', $activeTripIds);
+
+        return [
+            'attentionAlerts' => $user->notifications()
+                ->with('trip')
+                ->where('is_read', false)
+                ->whereIn('type', self::ATTENTION_TYPES)
+                ->latest()
+                ->limit(4)
+                ->get(),
+
+            // Scoped by trip rather than by who logged the expense, matching
+            // ExpenseController::index() — on a group trip the totals above
+            // count everyone's spending, so a "recent" list that showed only
+            // your own rows would contradict them.
+            'recentExpenses' => Expense::with(['trip', 'user:id,full_name'])
+                ->whereIn('trip_id', $user->accessibleTrips()->select('id'))
+                ->latest('expense_date')
+                ->latest('id')
+                ->limit(6)
+                ->get(),
+
+            'savingsSnapshot' => $this->savingsSnapshot($user),
+
+            'todayEvents' => empty($activeTripIds) ? collect()
+                : $itinerary()->whereDate('start_datetime', $today)
+                    ->orderBy('start_datetime')->limit(4)->get(),
+
+            'upcomingEvents' => empty($activeTripIds) ? collect()
+                : $itinerary()->whereDate('start_datetime', '>', $today)
+                    ->orderBy('start_datetime')->limit(3)->get(),
+        ];
+    }
+
+    /**
+     * Savings goals tied to a trip, soonest deadline first.
+     *
+     * The target is the trip's planned cost when it has one, falling back to
+     * the goal's own target_amount — the same fallback SavingsGoalManager
+     * applies in four places and in its blade. Using target_amount alone here
+     * would show a percentage that contradicts the Savings page for any goal
+     * whose trip has since been priced.
+     *
+     * @return array<int, array{name: string, trip: ?string, saved: float, target: float, pct: float, deadline: mixed}>
+     */
+    private function savingsSnapshot($user): array
+    {
+        return $user->savingsGoals()
+            ->with('trip')
+            ->whereNotNull('trip_id')
+            ->get()
+            // Goals without a deadline sort last rather than first, which is
+            // what ascending null ordering would otherwise do.
+            ->sortBy(fn (SavingsGoal $g) => $g->deadline?->timestamp ?? PHP_INT_MAX)
+            ->take(3)
+            ->map(function (SavingsGoal $g) {
+                $target = (float) ($g->trip?->total_cost ?? $g->target_amount ?? 0);
+                $saved  = (float) $g->current_savings;
+
+                return [
+                    'name'     => $g->goal_name ?: 'Savings goal',
+                    'trip'     => $g->trip ? trip_display_name($g->trip) : null,
+                    'saved'    => $saved,
+                    'target'   => $target,
+                    // Same rounding as SavingsGoalManager::getPctProperty(),
+                    // so the two pages print the same number.
+                    'pct'      => $target > 0 ? min(100, round($saved / $target * 100, 1)) : 0,
+                    'deadline' => $g->deadline,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /** The screenData() keys, empty — so the guest render has every variable. */
+    private static function emptyScreenData(): array
+    {
+        return [
+            'attentionAlerts' => collect(),
+            'recentExpenses'  => collect(),
+            'savingsSnapshot' => [],
+            'todayEvents'     => collect(),
+            'upcomingEvents'  => collect(),
+        ];
+    }
 }

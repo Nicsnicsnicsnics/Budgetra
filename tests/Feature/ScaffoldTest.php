@@ -39,7 +39,7 @@ class ScaffoldTest extends TestCase
             '/savings',
             '/itinerary',
             '/attractions',
-            '/alerts',
+            '/notifications',
             '/reports',
             '/expenses',
             '/expenses/create',

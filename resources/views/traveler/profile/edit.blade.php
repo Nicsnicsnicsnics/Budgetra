@@ -313,28 +313,7 @@
     div[style*="grid-template-columns:1fr 1fr"][style*="align-items:stretch"] { grid-template-columns: 1fr !important; }
 }
 
-.pf-toast{
-    position:fixed;right:24px;bottom:24px;z-index:60;
-    display:flex;align-items:center;gap:8px;
-    background:var(--dark);color:var(--bg-white);
-    border-radius:12px;padding:12px 18px;
-    font-size:13px;font-weight:700;
-    box-shadow:0 8px 24px rgba(45,27,20,.22);
-    opacity:0;transform:translateY(8px);pointer-events:none;
-    transition:opacity .2s,transform .2s;
-}
-.pf-toast.is-shown{opacity:1;transform:translateY(0);}
-@media (prefers-reduced-motion:reduce){
-    .pf-toast{transition:opacity .2s;transform:none;}
-    .pf-toast.is-shown{transform:none;}
-}
 </style>
-
-{{-- Saving no longer reloads the page, so this is the only thing that says
-     it worked. --}}
-<div id="profileSavedToast" class="pf-toast" role="status" aria-live="polite">
-    <i class="fa-solid fa-circle-check"></i> Profile updated
-</div>
 
 {{-- Rendered open when the server refused the photo, so a rejection that
      slipped past the browser check lands in the same place as one that did
@@ -485,13 +464,8 @@
             var picker = document.getElementById('profile_photo');
             if (picker) picker.value = '';
 
-            var toast = document.getElementById('profileSavedToast');
-            if (!toast) return;
-            toast.classList.add('is-shown');
-            clearTimeout(toast.dataset.timer);
-            toast.dataset.timer = setTimeout(function () {
-                toast.classList.remove('is-shown');
-            }, 2600);
+            // No success toast: the spinner giving way to "Save Changes" is the
+            // confirmation, along with the avatar and name repainting in place.
         }
 
         form.addEventListener('submit', function (e) {
@@ -501,7 +475,8 @@
             var label = btn.innerHTML;
             btn.disabled = true;
             btn.style.opacity = '.7';
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="font-size:11px;"></i> Saving…';
+            btn.setAttribute('aria-label', 'Saving changes…');
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="font-size:11px;" aria-hidden="true"></i>';
 
             fetch(form.action, {
                 method: 'POST',            // with _method=PUT in the body, so the file survives
@@ -521,6 +496,7 @@
             }).then(function () {
                 btn.disabled = false;
                 btn.style.opacity = '';
+                btn.removeAttribute('aria-label');
                 btn.innerHTML = label;
             });
         });

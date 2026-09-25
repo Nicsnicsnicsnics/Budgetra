@@ -9,9 +9,9 @@
 <div class="empty-state-center" style="min-height:80vh;">
     <div style="width:64px;height:64px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
         @if ($isMoments)
-        <i class="fa-regular fa-images" style="font-size:28px;color:#fff;"></i>
+        <x-nav-icon icon="moments" style="font-size:28px;color:#fff;" />
         @else
-        <i class="fa-solid fa-calendar-days" style="font-size:28px;color:#fff;"></i>
+        <x-nav-icon icon="itinerary" style="font-size:28px;color:#fff;" />
         @endif
     </div>
     @if ($imNeedsProfile)
@@ -90,7 +90,10 @@
             <div x-show="open" x-transition
                  style="position:absolute;top:calc(100% + 8px);left:0;right:0;background:var(--bg-white);border:1.5px solid var(--border);border-radius:16px;box-shadow:0 12px 32px rgba(45,27,20,.14);z-index:50;overflow:hidden;padding:6px;">
                 @foreach($this->trips as $t)
+                {{-- Keyed by trip id: without it the morph pairs these buttons
+                     by position, and every one of them is the same shape. --}}
                 <button type="button"
+                        wire:key="trip-opt-{{ $t->id }}"
                         wire:click="$set('selectedTripId', {{ $t->id }})"
                         @click="open = false"
                         style="width:100%;background:{{ $selectedTripId == $t->id ? 'var(--primary-light)' : 'transparent' }};border:none;border-radius:11px;padding:10px 12px;display:flex;align-items:center;gap:11px;cursor:pointer;text-align:left;transition:background .12s;"
@@ -309,7 +312,18 @@
         .itin-cal-toggle{transition:background .15s;}
         .itin-cal-toggle:hover{background:var(--bg);}
     </style>
-    <div x-data="{
+    {{-- Keyed on the trip so switching trips REPLACES this subtree instead of
+         morphing it. Alpine evaluates x-data once, when the element is first
+         initialised, and Livewire's morph reuses the same element across a
+         re-render — so picking another trip left selDate pointing at a date in
+         the trip you just left (no day highlighted, "No trips planned on this
+         date" in the events panel) and mi pointing at a month the new trip may
+         not even span, which blanked the calendar. The server was right the
+         whole time; only a page reload re-seeded Alpine, which is why it took
+         one. A changed wire:key makes Livewire swap the element, and the new
+         x-data is read on the way in. --}}
+    <div wire:key="itin-cal-{{ $selectedTripId }}"
+         x-data="{
             mi: 0,
             view: 'month',
             selDate: '{{ $agendaDate }}',
@@ -365,9 +379,9 @@
                 @endforeach
             </div>
 
-            {{-- My Calendars (category filter) --}}
+            {{-- Categories (category filter) --}}
             <div style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:16px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,.04);">
-                <div style="font-size:12px;font-weight:800;color:var(--dark);margin-bottom:14px;">My Calendars</div>
+                <div style="font-size:12px;font-weight:800;color:var(--dark);margin-bottom:14px;text-align:center;">Categories</div>
                 <div style="display:flex;flex-direction:column;gap:4px;">
                     @foreach([['showFlight','Transportation','#3B82F6'],['showHotel','Accommodation','#0D9488'],['showFood','Food & Dining','#EF4444'],['showActivity','Attractions','#FFDA03']] as [$flag, $label, $color])
                     <label class="itin-cal-toggle" style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text);padding:6px 8px;border-radius:9px;margin:0 -8px;">
@@ -381,7 +395,7 @@
 
             {{-- Selected day's events --}}
             <div style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:16px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,.04);">
-                <div style="font-size:12px;font-weight:800;color:var(--dark);margin-bottom:12px;" x-text="selDate==='{{ $agendaDate }}' ? {{ $agendaDate === $todayStr ? "'Today\\'s Events'" : "'Trip Events'" }} : 'Events'"></div>
+                <div style="font-size:12px;font-weight:800;color:var(--dark);margin-bottom:12px;text-align:center;" x-text="selDate==='{{ $agendaDate }}' ? {{ $agendaDate === $todayStr ? "'Today\\'s Events'" : "'Trip Events'" }} : 'Events'"></div>
                 @foreach($itemsByDate as $iDate => $iItems)
                 <div x-show="selDate==='{{ $iDate }}'" style="display:flex;flex-direction:column;gap:10px;">
                     @foreach($iItems as $it)

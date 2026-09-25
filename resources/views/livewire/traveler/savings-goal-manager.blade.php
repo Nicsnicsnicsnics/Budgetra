@@ -6,7 +6,7 @@
         $tType      = strtoupper($trip?->travel_type ?? 'SOLO');
         $typeColor    = $tType === 'GROUP' ? '#A855F7' : '#14B8A6';
         $tripStatus   = $trip?->status ?? ($trip?->start_date?->gt(\Carbon\Carbon::today()) ? 'upcoming' : ($trip?->end_date?->lt(\Carbon\Carbon::today()) ? 'past' : 'active'));
-        $cover      = $trip?->cover_image ?: ($tripStatus === 'draft' ? asset('stockimages/draftimage.jpg') : null);
+        $cover      = $trip?->coverImageUrl();
         $statusColor  = match($tripStatus) { 'active' => '#22C55E', 'upcoming' => '#3B82F6', default => 'var(--muted)' };
         $fromCode   = $trip?->origin_code ?? 'MNL';
         $toCode     = $trip?->destination_code ?? '';

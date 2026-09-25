@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign In — Budgetra</title>
-    <link rel="icon" type="image/jpeg" href="{{ asset('systemicons/budgetra.jpg') }}">
+    <link rel="icon" type="image/png" href="{{ asset('systemicons/budgetraicon.png') }}?v={{ filemtime(public_path('systemicons/budgetraicon.png')) }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -22,7 +22,11 @@
         <div style="position:absolute;inset:0;background-image:url('{{ asset('stockimages/loginsidebar.jpg') }}');background-size:cover;background-position:center;filter:blur(3px);transform:scale(1.05);"></div>
         <div style="position:absolute;inset:0;background:rgba(0,0,0,.25);"></div>
         <div style="position:relative;z-index:2;height:100%;display:flex;align-items:center;justify-content:center;">
-            <img src="{{ asset('systemicons/budgetraicon-modified.png') }}" alt="Budgetra" style="max-width:200px;width:60%;">
+            {{-- budgetraicon.png is a black line mark on transparency, and this panel
+                 is a blurred photo under a dark scrim — so it is painted white
+                 rather than dropped in as-is. See .brand-mark. --}}
+            <img src="{{ asset('systemicons/budgetraicon.png') }}?v={{ filemtime(public_path('systemicons/budgetraicon.png')) }}"
+                 alt="Budgetra" class="brand-mark" style="max-width:200px;width:60%;">
         </div>
     </div>
 
@@ -31,12 +35,10 @@
         <div class="auth-form-wrap">
             <h1 class="auth-title">Welcome Back!</h1>
 
-            @if ($errors->any())
-            <div class="alert alert-danger">
-                {{ $errors->first() }}
-            </div>
-            @endif
-
+            {{-- No summary banner, same as Create an Account. Both of the
+                 errors this form can raise — a bad sign-in and a suspended
+                 account — are attached to 'email', so they print under that
+                 field; the banner only said it a second time. --}}
             <form method="POST" action="{{ route('login') }}">
                 @csrf
 
@@ -66,8 +68,8 @@
                     @error('password')<div class="error">{{ $message }}</div>@enderror
                 </div>
 
-                <button type="submit" class="btn btn-primary btn-lg btn-block">
-                    Sign In &nbsp;→
+                <button type="submit" class="btn btn-primary btn-lg btn-block" data-busy-label="Signing in…">
+                    Sign In &nbsp;
                 </button>
             </form>
 

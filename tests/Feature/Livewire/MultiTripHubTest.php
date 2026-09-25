@@ -27,17 +27,58 @@ class MultiTripHubTest extends TestCase
         $this->actingAs($user)->get('/multi-trips')->assertStatus(200)->assertSee('Multi Trip Hub');
     }
 
-    public function test_search_filters_trips(): void
+    public function test_the_page_ships_every_trip_for_the_browser_to_filter(): void
     {
+        // Searching moved into Alpine so it lands on the keystroke instead of
+        // 500ms later, which means the server deliberately does NOT filter:
+        // both trips are rendered and the browser hides one.
         $user = User::factory()->create();
         Trip::factory()->create(['user_id' => $user->id, 'destination' => 'Boracay, Philippines']);
         Trip::factory()->create(['user_id' => $user->id, 'destination' => 'Bangkok, Thailand']);
 
         Livewire::actingAs($user)
             ->test(MultiTripHub::class)
-            ->set('search', 'Boracay')
             ->assertSee('Boracay')
-            ->assertDontSee('Bangkok');
+            ->assertSee('Bangkok');
+    }
+
+    public function test_each_trip_carries_what_the_browser_matches_on(): void
+    {
+        // The haystack is the client-side counterpart of the WHERE clause the
+        // component used to run: a renamed trip still findable by where it
+        // goes, and a multi-city trip findable by its second leg.
+        $user = User::factory()->create();
+        Trip::factory()->create([
+            'user_id'          => $user->id,
+            'destination'      => 'Boracay, Philippines',
+            'trip_name'        => 'Barkada Getaway',
+            'leg2_destination' => 'Cebu City',
+        ]);
+
+        $html = $this->actingAs($user)->get('/multi-trips')->getContent();
+
+        foreach (['boracay', 'barkada getaway', 'cebu city'] as $term) {
+            $this->assertStringContainsString($term, $html, "cannot be searched by \"{$term}\"");
+        }
+    }
+
+    public function test_searching_can_no_longer_strand_a_compared_trip(): void
+    {
+        // Server-side search shrank the collection on every keystroke, and
+        // fetchCompareData() then looked up a selected id that was no longer
+        // in it — firstWhere() returned null and the next property read blew
+        // up. With the collection stable, picking two trips and typing is
+        // just a filter.
+        $user  = $this->userWithProfile();
+        $trip1 = Trip::factory()->create(['user_id' => $user->id, 'destination' => 'Boracay, Philippines']);
+        $trip2 = Trip::factory()->create(['user_id' => $user->id, 'destination' => 'Bangkok, Thailand']);
+
+        Livewire::actingAs($user)
+            ->test(MultiTripHub::class)
+            ->call('toggleCompare', $trip1->id)
+            ->call('toggleCompare', $trip2->id)
+            ->call('runComparison')
+            ->assertOk();
     }
 
     public function test_picking_two_trips_and_running_the_comparison_opens_the_modal(): void

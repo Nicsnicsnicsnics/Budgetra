@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Create Account — Budgetra</title>
-    <link rel="icon" type="image/jpeg" href="{{ asset('systemicons/budgetra.jpg') }}">
+    <link rel="icon" type="image/png" href="{{ asset('systemicons/budgetraicon.png') }}?v={{ filemtime(public_path('systemicons/budgetraicon.png')) }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -23,7 +23,11 @@
         <div style="position:absolute;inset:0;background-image:url('{{ asset('stockimages/registersidebar.jpg') }}');background-size:cover;background-position:center;filter:blur(3px);transform:scale(1.05);"></div>
         <div style="position:absolute;inset:0;background:rgba(0,0,0,.25);"></div>
         <div style="position:relative;z-index:2;height:100%;display:flex;align-items:center;justify-content:center;">
-            <img src="{{ asset('systemicons/budgetraicon-modified.png') }}" alt="Budgetra" style="max-width:200px;width:60%;">
+            {{-- budgetraicon.png is a black line mark on transparency, and this panel
+                 is a blurred photo under a dark scrim — so it is painted white
+                 rather than dropped in as-is. See .brand-mark. --}}
+            <img src="{{ asset('systemicons/budgetraicon.png') }}?v={{ filemtime(public_path('systemicons/budgetraicon.png')) }}"
+                 alt="Budgetra" class="brand-mark" style="max-width:200px;width:60%;">
         </div>
     </div>
 
@@ -32,12 +36,9 @@
         <div class="auth-form-wrap">
             <h1 class="auth-title">Create an Account</h1>
 
-            @if ($errors->any())
-            <div class="alert alert-danger">
-                {{ $errors->first() }}
-            </div>
-            @endif
-
+            {{-- No summary banner here: every validated field prints its own
+                 message underneath itself, so this only ever repeated the
+                 first of them a few hundred pixels higher up. --}}
             <form id="registerForm" method="POST" action="{{ route('register') }}">
                 @csrf
 
@@ -144,6 +145,10 @@
                             @endforeach
                         </select>
                     </div>
+                    {{-- The only validated field that had no message of its own.
+                         It can only fail on an over-long value, but with the
+                         summary gone that failure would be invisible. --}}
+                    @error('country')<div class="error">{{ $message }}</div>@enderror
                 </div>
 
                 {{-- Terms --}}
@@ -155,8 +160,11 @@
                     </span>
                 </label>
 
+                {{-- While the request is in flight auth-form.js shows a bare
+                     spinner here; data-busy-label is not drawn, it becomes the
+                     button's accessible name for as long as that lasts. --}}
                 <button type="submit" id="createAccountBtn" class="btn btn-primary btn-block"
-                        style="margin-bottom:16px;" disabled>
+                        style="margin-bottom:16px;" data-busy-label="Creating account…" disabled>
                     Create Account
                 </button>
             </form>

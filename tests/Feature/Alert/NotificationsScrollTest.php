@@ -29,7 +29,7 @@ class NotificationsScrollTest extends TestCase
             ]);
         }
 
-        $html = $this->actingAs($user)->get('/alerts')->assertStatus(200)->getContent();
+        $html = $this->actingAs($user)->get('/notifications')->assertStatus(200)->getContent();
 
         $this->assertStringContainsString('class="notif-scroll"', $html);
         $this->assertStringContainsString('overflow-y: auto', $html);

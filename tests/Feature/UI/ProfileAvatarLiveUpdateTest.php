@@ -134,14 +134,18 @@ class ProfileAvatarLiveUpdateTest extends TestCase
         $html = $this->actingAs($me)->get('/attractions/' . $spot->id)->getContent();
 
         // One review row is mine; the other reviewer's picture is none of the
-        // sync script's business. The sidebar's own avatar is hooked too, so
-        // two hooks in the document is the correct count.
+        // sync script's business.
         $rows = substr_count($html, 'atd-review-avatar');
         $this->assertGreaterThanOrEqual(2, $rows, 'both reviews should render');
+
+        // Counted by the review placeholder's own marker rather than by every
+        // data-user-avatar on the page: the sidebar contributes a varying
+        // number of those (it renders the Profile link once per destination,
+        // so CSS can pick one), and that is not what this test is about.
         $this->assertSame(
-            2,
-            substr_count($html, 'data-user-avatar'),
-            'exactly the sidebar avatar and my own review row should carry the hook'
+            1,
+            substr_count($html, 'data-avatar-img-class="atd-review-avatar atd-review-avatar-img"'),
+            'exactly one review row — mine — should carry the hook'
         );
     }
 
@@ -151,6 +155,10 @@ class ProfileAvatarLiveUpdateTest extends TestCase
 
         $this->assertStringContainsString('id="profileForm"', $html);
         $this->assertStringContainsString('budgetraSyncAvatar', $html);
-        $this->assertStringContainsString('profileSavedToast', $html);
+
+        // Saving confirms itself by the spinner giving way and the avatar and
+        // name repainting — there is deliberately no success toast.
+        $this->assertStringNotContainsString('profileSavedToast', $html);
+        $this->assertStringNotContainsString('Profile updated', $html);
     }
 }

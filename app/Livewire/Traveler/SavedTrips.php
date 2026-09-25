@@ -15,7 +15,6 @@ use Livewire\Component;
 #[Layout('layouts.app', ['active' => 'saved-trips'])]
 class SavedTrips extends Component
 {
-    public string $search       = '';
     public ?int $detailTripId   = null;
     public ?int $deleteTripId   = null;
     public string $deleteTripName = '';
@@ -252,15 +251,9 @@ class SavedTrips extends Component
                       ->whereHas('groupMembers', fn ($g) => $g->where('user_id', $uid))
                       ->where(fn ($d) => $d->whereNull('status')->orWhere('status', '!=', 'draft')));
             })
-            // Matches either the traveller's own trip name or the destination,
-            // since a renamed trip ("Barkada Getaway") no longer contains the
-            // place it goes to, and searching for the place should still find it.
-            ->when($this->search !== '', function ($q) {
-                $term = '%' . str_replace('%', '\%', $this->search) . '%';
-                $q->where(fn ($w) => $w->whereLike('destination', $term, caseSensitive: false)
-                                       ->orWhereLike('trip_name', $term, caseSensitive: false)
-                                       ->orWhereLike('leg2_destination', $term, caseSensitive: false));
-            })
+            // Searching happens in the browser so it lands on the keystroke
+            // rather than 500ms later; trip_search_haystack() carries the same
+            // three fields this clause used to match on.
             ->withSum('expenses', 'amount')
             ->withCount('groupMembers')
             ->with('user:id,full_name')

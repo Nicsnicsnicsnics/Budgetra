@@ -32,6 +32,12 @@ class RegisterController extends Controller
             'role'       => 'traveler',
         ]);
 
+        // Same reasoning as LoginController: the form posts with fetch(), so
+        // the page it should land on comes back as data rather than a 302.
+        if ($request->expectsJson()) {
+            return response()->json(['redirect' => route('login')]);
+        }
+
         return redirect()->route('login');
     }
 }
