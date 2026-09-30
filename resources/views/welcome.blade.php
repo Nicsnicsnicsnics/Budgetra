@@ -20,7 +20,6 @@
 <nav class="site-navbar">
     <div class="container-nav">
         <div class="nav-brand">
-            <img src="{{ asset('systemicons/budgetra.jpg') }}" alt="Budgetra" style="height:56px;width:auto;">
         </div>
         <div class="nav-actions" style="margin-left:auto;">
             <a href="{{ route('login') }}" class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border:1.5px solid rgba(255,255,255,.4);backdrop-filter:blur(6px);">Login</a>

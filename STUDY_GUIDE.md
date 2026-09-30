@@ -16,8 +16,7 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     Route::get('/dashboard', [Admin\DashboardController::class, '__invoke'])
         ->name('dashboard');
 });
-```
-
+``
 Every traveler URL is behind `auth` and `not-admin`. Every admin URL is
 behind `auth` and `admin`. `EnsureUserIsNotBanned` is appended to the web
 middleware group in `bootstrap/app.php`.
