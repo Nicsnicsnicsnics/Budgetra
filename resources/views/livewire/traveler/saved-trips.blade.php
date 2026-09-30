@@ -40,13 +40,15 @@
 .st-member-remove:hover{background:color-mix(in srgb, #DC2626 26%, var(--bg-white));}
 </style>
 
-    {{-- && !$search — a search that matches nothing is not the same as having
-         no trips at all, and must not offer "Plan Your First Trip". --}}
-    @if ($trips->isEmpty() && !$search)
+    {{-- The !$search guard this used to carry is no longer needed: the
+         collection stopped shrinking as you type, so an empty one really
+         does mean no trips, and "Plan Your First Trip" is the right offer.
+         A search that matches nothing is handled inside the tabs. --}}
+    @if ($trips->isEmpty())
     @php $stNeedsProfile = ! auth()->user()?->userProfile; @endphp
     <div class="empty-state-center" style="min-height:80vh;">
         <div style="width:64px;height:64px;border-radius:18px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
-            <i class="fa-solid fa-suitcase-rolling" style="font-size:28px;color:#fff;"></i>
+            <x-nav-icon icon="saved-trips" style="font-size:28px;color:#fff;" />
         </div>
         @if ($stNeedsProfile)
         <div class="empty-state-swap" data-empty-when="profile">
@@ -64,7 +66,7 @@
         @endif
         <div class="empty-state-swap" @if ($stNeedsProfile) data-empty-when="skipped" @endif>
             <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">No saved trips yet</h2>
-            <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Plan a trip first to see your saved and draft trips.</p>
+            <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Plan a trip first to see your active, draft, and past trips.</p>
             <a href="{{ route('trips.plan') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;transition:background .18s;"
                onmouseenter="this.style.background='var(--primary-dark)'" onmouseleave="this.style.background='var(--primary)'">
                 <i class="fa-solid fa-plane"></i> Plan Your First Trip
@@ -81,9 +83,23 @@
             ['key' => 'draft',  'label' => 'Draft Trips',  'icon' => 'fa-regular fa-file-lines',      'items' => $draftTrips,  'noun' => 'draft trips'],
             ['key' => 'past',   'label' => 'Past Trips',   'icon' => 'fa-solid fa-clock-rotate-left', 'items' => $pastTrips,   'noun' => 'past trips'],
         ];
+
+        // Filtering runs in the browser so it lands on the keystroke rather
+        // than 500ms later. trip_search_haystack() is the client-side
+        // counterpart of the WHERE clause the component used to run.
+        $stIndex = collect($stGroups)->mapWithKeys(fn ($g) => [
+            $g['key'] => $g['items']->map(fn ($t) => trip_search_haystack($t))->values()->all(),
+        ])->all();
     @endphp
 
-    <div x-data="{ tab: 'active' }" style="display:flex;flex-direction:column;">
+    <div x-data="{
+            tab: 'active',
+            q: '',
+            get needle() { return this.q.trim().toLowerCase(); },
+            matches(hay) { return this.needle === '' || hay.includes(this.needle); },
+            countFor(key) { return this.index[key].filter(h => this.matches(h)).length; },
+            index: @js($stIndex),
+         }" style="display:flex;flex-direction:column;">
         {{-- Browser-tab-style switcher --}}
         <div style="display:flex;align-items:flex-end;gap:4px;flex-shrink:0;flex-wrap:wrap;">
             @foreach ($stGroups as $stGroup)
@@ -94,53 +110,71 @@
                     <i class="{{ $stGroup['icon'] }}" style="color:#fff;font-size:11px;"></i>
                 </div>
                 <span style="font-size:14px;font-weight:700;">{{ $stGroup['label'] }}</span>
-                <span style="font-size:11px;font-weight:800;{{ $stCount > 0 ? 'color:#fff;background:var(--primary);' : 'color:#B3A69A;background:#F3EEE8;' }}border-radius:99px;min-width:20px;height:20px;padding:0 6px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">{{ $stCount }}</span>
+                <span x-text="countFor('{{ $stGroup['key'] }}')"
+                      :style="'font-size:11px;font-weight:800;border-radius:99px;min-width:20px;height:20px;padding:0 6px;display:inline-flex;align-items:center;justify-content:center;line-height:1;' + (countFor('{{ $stGroup['key'] }}') > 0 ? 'color:#fff;background:var(--primary);' : 'color:#B3A69A;background:#F3EEE8;')"></span>
             </button>
             @endforeach
 
             {{-- Right-aligned via margin-left:auto on .page-search --}}
+            {{-- No spinner: there is no round trip to wait for any more. --}}
             <label class="page-search">
-                {{-- The icon doubles as the in-flight indicator: the round trip
-                     to the DB runs ~0.5s, so without it the box looks frozen
-                     between keystroke and result. 500ms debounce (not 300)
-                     keeps a fast typist from queueing overlapping requests
-                     that then resolve one behind the other. --}}
-                <i class="fa-solid fa-magnifying-glass" wire:loading.remove wire:target="search"></i>
-                <i class="fa-solid fa-spinner fa-spin" wire:loading wire:target="search" style="color:var(--primary);"></i>
-                <input type="text" wire:model.live.debounce.500ms="search" placeholder="Search trips">
-                <button type="button" wire:click="$set('search', '')" x-show="$wire.search" x-cloak title="Clear search">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" x-model="q" placeholder="Search trips">
+                <button type="button" x-show="q" x-cloak @click="q = ''" title="Clear search">
                     <i class="fa-solid fa-xmark"></i>
                 </button>
             </label>
         </div>
 
         {{-- Tab panels --}}
-        <div style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:0 16px 16px 16px;padding:32px 24px;display:flex;flex-direction:column;position:relative;">
+        <div class="tab-panel">
         @foreach ($stGroups as $stGroup)
-        <div x-show="tab === '{{ $stGroup['key'] }}'" x-cloak style="display:flex;flex-direction:column;">
+        <div x-show="tab === '{{ $stGroup['key'] }}'" x-cloak class="tab-pane">
             @if ($stGroup['items']->isEmpty())
             {{-- A search that matched nothing is a different situation from an
                  empty tab: the trips may well exist, just not under this term.
                  Saying "No saved trips yet" there would be wrong, and would
                  point the traveler at planning a trip they already have. --}}
-            <div style="min-height:360px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 20px;">
+            <div class="tab-empty">
                 <div style="width:56px;height:56px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:18px;">
-                    <i class="{{ $search ? 'fa-solid fa-magnifying-glass' : $stGroup['icon'] }}" style="font-size:24px;color:#fff;"></i>
+                    <x-nav-icon :icon="$stGroup['icon']" style="font-size:24px;color:#fff;" x-show="q.trim() === ''" />
+                    <i class="fa-solid fa-magnifying-glass" x-show="q.trim() !== ''" x-cloak style="font-size:22px;color:#fff;"></i>
                 </div>
-                @if ($search)
-                <h3 style="font-weight:700;font-size:17px;margin:0 0 6px;color:var(--dark);">No trips found</h3>
-                <p style="color:var(--muted);font-size:13px;max-width:280px;line-height:1.6;margin:0;">Try searching another trip.</p>
-                @else
-                <h3 style="font-weight:700;font-size:17px;margin:0 0 6px;color:var(--dark);">No {{ $stGroup['label'] }} yet</h3>
-                <p style="color:var(--muted);font-size:13px;max-width:280px;line-height:1.6;margin:0;">Plan a trip first to see your {{ $stGroup['noun'] }}.</p>
-                @endif
+                <h3 x-show="q.trim() === ''" style="font-weight:700;font-size:17px;margin:0 0 6px;color:var(--dark);">No {{ $stGroup['label'] }} yet</h3>
+                <p x-show="q.trim() === ''" style="color:var(--muted);font-size:13px;max-width:280px;line-height:1.6;margin:0;">Plan a trip first to see your {{ $stGroup['noun'] }}.</p>
+                <h3 x-show="q.trim() !== ''" x-cloak style="font-weight:700;font-size:17px;margin:0 0 6px;color:var(--dark);">No trips found</h3>
+                <p x-show="q.trim() !== ''" x-cloak style="color:var(--muted);font-size:13px;max-width:280px;line-height:1.6;margin:0;">Try searching another trip.</p>
             </div>
             @else
-            @php $stTotalPages = (int) ceil($stGroup['items']->count() / 3); @endphp
-            <div x-data="{ page: 1 }" style="display:flex;flex-direction:column;">
+            {{-- Paging follows the filter. The page each card belongs to used
+                 to be baked in from the unfiltered loop index, so searching
+                 would have left page 1 showing whichever 1 of its 3 matched
+                 and the rest of the results stranded on later pages. Rank is
+                 recomputed among the cards that currently match. --}}
+            <div x-data="{
+                    page: 1,
+                    hays: @js($stIndex[$stGroup['key']]),
+                    perPage: 3,
+                    rank(i) {
+                        if (!this.matches(this.hays[i])) return -1;
+                        let r = 0;
+                        for (let k = 0; k < i; k++) if (this.matches(this.hays[k])) r++;
+                        return r;
+                    },
+                    pageOf(i) { const r = this.rank(i); return r < 0 ? -1 : Math.floor(r / this.perPage) + 1; },
+                    get matchCount() { return this.hays.filter(h => this.matches(h)).length; },
+                    get totalPages() { return Math.max(1, Math.ceil(this.matchCount / this.perPage)); },
+                    get pageNums() {
+                        const t = this.totalPages;
+                        if (t <= 5) return Array.from({ length: t }, (_, i) => i + 1);
+                        return [1, 2, 3, 4, '…', t];
+                    },
+                 }"
+                 x-init="$watch('q', () => page = 1)"
+                 style="display:flex;flex-direction:column;">
             <div style="width:100%;display:flex;flex-wrap:wrap;justify-content:center;gap:28px;align-items:flex-start;">
                 @foreach ($stGroup['items'] as $trip)
-                <div x-show="page === {{ (int) floor($loop->index / 3) + 1 }}" style="{{ $detailTripId === $trip->id ? 'flex:0 0 calc((100% - 56px) / 3 * 2 + 28px);max-width:calc((100% - 56px) / 3 * 2 + 28px);' : 'flex:0 0 calc((100% - 56px) / 3);max-width:calc((100% - 56px) / 3);' }}">
+                <div x-show="pageOf({{ $loop->index }}) === page" style="{{ $detailTripId === $trip->id ? 'flex:0 0 calc((100% - 56px) / 3 * 2 + 28px);max-width:calc((100% - 56px) / 3 * 2 + 28px);' : 'flex:0 0 calc((100% - 56px) / 3);max-width:calc((100% - 56px) / 3);' }}">
         <div style="display:flex;align-items:stretch;">
         @php
             // A never-finished draft (saved before a destination was picked)
@@ -156,7 +190,7 @@
             $dateTo   = $trip->end_date->format('M j, Y');
             $days     = $trip->days;
             $displayCost = $trip->total_cost ?? $trip->budget_limit ?? 0;
-            $cover    = $trip->cover_image ?: ($trip->status === 'draft' ? asset('stockimages/draftimage.jpg') : null);
+            $cover    = $trip->coverImageUrl();
             $statusColor = match($trip->status) {
                 'active'   => '#22C55E',
                 'upcoming' => '#3B82F6',
@@ -188,17 +222,14 @@
                             onmouseenter="this.style.background='rgba(0,0,0,0.55)'" onmouseleave="this.style.background='rgba(0,0,0,0.35)'">
                         <i class="fa-solid fa-ellipsis-vertical" style="font-size:14px;"></i>
                     </button>
-                    <div x-show="open" x-transition
-                         style="position:absolute;top:40px;right:0;background:var(--bg-white);border:1px solid var(--border);border-radius:12px;min-width:160px;z-index:100;overflow:hidden;">
-                        <button wire:click="openEditName({{ $trip->id }})" @click="open=false"
-                                style="width:100%;background:none;border:none;padding:11px 16px;font-size:13px;font-weight:500;color:var(--dark);cursor:pointer;display:flex;align-items:center;gap:8px;text-align:left;border-bottom:1px solid var(--bg);font-family:'Hanken Grotesk',sans-serif;"
-                                onmouseenter="this.style.background='var(--bg)'" onmouseleave="this.style.background='none'">
-                            <i class="fa-regular fa-pen-to-square" style="font-size:12px;color:var(--muted);"></i> Edit Trip
+                    {{-- .card-menu carries the colours; see style.css. They were
+                         inline and written for the light theme only. --}}
+                    <div x-show="open" x-transition class="card-menu">
+                        <button wire:click="openEditName({{ $trip->id }})" @click="open=false">
+                            <i class="fa-regular fa-pen-to-square"></i> Edit Trip
                         </button>
-                        <button wire:click="confirmDelete({{ $trip->id }})" @click="open=false"
-                                style="width:100%;background:none;border:none;padding:11px 16px;font-size:13px;font-weight:500;color:#ba1a1a;cursor:pointer;display:flex;align-items:center;gap:8px;text-align:left;font-family:'Hanken Grotesk',sans-serif;"
-                                onmouseenter="this.style.background='#fff5f5'" onmouseleave="this.style.background='none'">
-                            <i class="fa-regular fa-trash-can" style="font-size:12px;"></i> Delete Trip
+                        <button wire:click="confirmDelete({{ $trip->id }})" @click="open=false" class="card-menu-danger">
+                            <i class="fa-regular fa-trash-can"></i> Delete Trip
                         </button>
                     </div>
                 </div>
@@ -397,36 +428,33 @@
                 </div>
                 @endforeach
             </div>
-            @if ($stTotalPages > 1)
-            @php
-                // Show first 4 pages, then an ellipsis + the last page once
-                // the run grows past what fits comfortably (matches the
-                // reference design: 1 2 3 4 … 10).
-                $stPageNums = $stTotalPages <= 5
-                    ? range(1, $stTotalPages)
-                    : [1, 2, 3, 4, '…', $stTotalPages];
-            @endphp
-            <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;padding-top:20px;">
+            {{-- The run of page numbers is Alpine's now: it has to shrink as a
+                 search narrows the results. Still first four, ellipsis, last. --}}
+            <div x-show="totalPages > 1" x-cloak class="tab-pager">
                 <button type="button" @click="page = Math.max(1, page - 1)" :disabled="page === 1"
                         :style="'display:flex;align-items:center;gap:8px;height:38px;padding:0 16px;border-radius:10px;border:1.5px solid var(--border);background:transparent;color:var(--dark);font-size:13px;font-weight:700;font-family:inherit;' + (page === 1 ? 'opacity:.4;cursor:not-allowed;' : 'cursor:pointer;')">
                     <i class="fa-solid fa-chevron-left" style="font-size:11px;"></i> Prev
                 </button>
-                @foreach ($stPageNums as $p)
-                    @if ($p === '…')
-                    <span style="width:38px;text-align:center;color:var(--muted);font-size:13px;font-weight:700;">&hellip;</span>
-                    @else
-                    <button type="button" @click="page = {{ $p }}"
-                            :style="'min-width:38px;height:38px;padding:0 4px;border-radius:10px;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:background .15s ease,color .15s ease;' + (page === {{ $p }} ? 'background:var(--primary);color:#fff;' : 'background:var(--bg);color:var(--muted);')">
-                        {{ $p }}
-                    </button>
-                    @endif
-                @endforeach
-                <button type="button" @click="page = Math.min({{ $stTotalPages }}, page + 1)" :disabled="page === {{ $stTotalPages }}"
-                        :style="'display:flex;align-items:center;gap:8px;height:38px;padding:0 16px;border-radius:10px;border:1.5px solid var(--border);background:transparent;color:var(--dark);font-size:13px;font-weight:700;font-family:inherit;' + (page === {{ $stTotalPages }} ? 'opacity:.4;cursor:not-allowed;' : 'cursor:pointer;')">
+                <template x-for="p in pageNums" :key="p">
+                    <span>
+                        <span x-show="p === '…'" class="tab-pager-gap">&hellip;</span>
+                        <button x-show="p !== '…'" type="button" x-text="p" @click="page = p"
+                                :style="'min-width:38px;height:38px;padding:0 4px;border-radius:10px;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:background .15s ease,color .15s ease;' + (page === p ? 'background:var(--primary);color:#fff;' : 'background:var(--bg);color:var(--muted);')"></button>
+                    </span>
+                </template>
+                <button type="button" @click="page = Math.min(totalPages, page + 1)" :disabled="page === totalPages"
+                        :style="'display:flex;align-items:center;gap:8px;height:38px;padding:0 16px;border-radius:10px;border:1.5px solid var(--border);background:transparent;color:var(--dark);font-size:13px;font-weight:700;font-family:inherit;' + (page === totalPages ? 'opacity:.4;cursor:not-allowed;' : 'cursor:pointer;')">
                     Next <i class="fa-solid fa-chevron-right" style="font-size:11px;"></i>
                 </button>
             </div>
-            @endif
+            {{-- Only while a search has filtered this tab down to nothing. --}}
+            <div x-show="q.trim() !== '' && matchCount === 0" x-cloak class="tab-empty">
+                <div style="width:56px;height:56px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:18px;">
+                    <i class="fa-solid fa-magnifying-glass" style="font-size:22px;color:#fff;"></i>
+                </div>
+                <h3 style="font-weight:700;font-size:17px;margin:0 0 6px;color:var(--dark);">No trips found</h3>
+                <p style="color:var(--muted);font-size:13px;max-width:280px;line-height:1.6;margin:0;">Try searching another trip.</p>
+            </div>
             </div>
             @endif
         </div>

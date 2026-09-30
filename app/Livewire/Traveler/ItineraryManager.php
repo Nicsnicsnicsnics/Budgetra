@@ -38,7 +38,6 @@ class ItineraryManager extends Component
 
     // Shown briefly (auto-clears client-side) when a pin add is blocked
     // because the target trip isn't Ongoing — see canPostMomentFor().
-    public string  $momentBlockedMessage = '';
 
     // Destination name (lowercased) -> [lat, lng]. Used only for the Moments
     // map marker; not shared with SerpApiService's own coords table.
@@ -644,12 +643,12 @@ class ItineraryManager extends Component
         $trip = $this->selectedTrip;
         if (!$trip) return;
 
-        if (!$this->canPostMomentFor($trip)) {
-            $this->momentBlockedMessage = 'You can only post moments for ongoing trips.';
-            return;
-        }
+        // Refused silently. The map carries a standing notice in its
+        // lower-left corner explaining that moments need an ongoing trip, so
+        // a toast saying the same thing on every click was repeating what is
+        // already on screen.
+        if (!$this->canPostMomentFor($trip)) return;
 
-        $this->momentBlockedMessage = '';
         $this->pinModalMode      = 'add';
         $this->editingPinId      = null;
         $this->pinLat             = $lat;

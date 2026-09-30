@@ -96,6 +96,43 @@ npm run build   # or `npm run dev` while developing
 php artisan serve
 ```
 
+## ⏰ Scheduled tasks
+
+The **Trip reminders** and **Itinerary reminders** toggles in Settings are read
+by two console commands (`app:send-trip-reminders`, `app:send-itinerary-reminders`).
+They only run if something invokes Laravel's scheduler every minute — without
+that, both toggles save the preference and no notification is ever created.
+
+On Windows, register the task once:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-scheduler.ps1
+```
+
+`Get-ScheduledTask -TaskName 'Budgetra Scheduler' | Get-ScheduledTaskInfo` should
+show `LastTaskResult` 0 and a `NextRunTime` about a minute out. An empty
+`NextRunTime` means the repetition never started. Remove it with the same script
+and `-Remove`. It only runs while the machine is on and you are logged in.
+
+**On a server, do the same thing with cron** — this is not optional, and it is
+the step most likely to be forgotten:
+
+```
+* * * * * cd /path/to/Budgetra && php artisan schedule:run >> /dev/null 2>&1
+```
+
+The nightly destination/attraction photo backfill is **deliberately not
+scheduled**. A pass spends up to 20 SerpAPI requests from the same 80/day pool
+as live flight, hotel and restaurant lookups, and there is enough backlog to
+keep doing that for weeks. Run it when you want it:
+
+```bash
+php artisan app:fill-destination-images
+php artisan app:fill-attraction-images
+```
+
+or set `SERPAPI_IMAGE_BACKFILL=true` to hand it back to the scheduler.
+
 ## 🧠 Good to know
 
 - Livewire components render as large single Blade files with `$step`-driven conditional sections rather than many small partials — see `resources/views/livewire/traveler/trip-planner-wizard.blade.php` for the wizard.

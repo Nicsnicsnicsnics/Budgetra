@@ -83,7 +83,7 @@
 @php $exNeedsProfile = ! auth()->user()?->userProfile; @endphp
 <div class="empty-state-center" style="min-height:80vh;">
     <div style="width:64px;height:64px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
-        <i class="fa-solid fa-receipt" style="font-size:28px;color:#fff;"></i>
+        <x-nav-icon icon="expenses" style="font-size:28px;color:#fff;" />
     </div>
     @if ($exNeedsProfile)
     <div class="empty-state-swap" data-empty-when="profile">
@@ -146,8 +146,10 @@
 
 <div x-data="{ confirmDeleteId: null, confirmDeleteDesc: '' }" style="max-width:960px;margin:0 auto;width:100%;">
 
-    {{-- Header: destination selector --}}
-    <div style="margin-bottom:20px;">
+    {{-- Header: destination selector. Swapped in place alongside
+         #expenses-region below, so picking another trip re-renders the label,
+         the highlighted row and the expenses under it without a page load. --}}
+    <div id="expenses-trip-region" style="margin-bottom:20px;">
         @if ($trips->count() === 1)
         @php $t = $trips->first(); @endphp
         <div style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:16px;padding:12px 16px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow-sm);">
@@ -185,7 +187,7 @@
             </div>
         </div>
         @endif
-    </div>
+    </div>{{-- /#expenses-trip-region --}}
 
     {{-- Filters + Transactions — swapped in-place via AJAX so choosing a
          filter never triggers a full page reload (see ajaxFilterSubmit
@@ -226,12 +228,12 @@
                     <div style="display:flex;align-items:center;gap:2px;font-weight:700;">
                         <input type="text" inputmode="numeric" placeholder="dd" maxlength="2" size="2"
                                x-ref="from_d" :value="fromParts.d"
-                               @input="onDateSeg('from','d',$event)" @focus="activeCal='from'; $event.target.select()"
+                               @input="onDateSeg('from','d',$event)" @blur="onDateSegBlur('from','d',$event)" @focus="activeCal='from'; $event.target.select()"
                                style="border:none;background:none;outline:none;padding:0;width:3ch;font-size:inherit;font-family:inherit;color:inherit;text-align:center;">
                         <span style="color:var(--muted);">/</span>
                         <input type="text" inputmode="numeric" placeholder="mm" maxlength="2" size="2"
                                x-ref="from_m" :value="fromParts.m"
-                               @input="onDateSeg('from','m',$event)" @focus="activeCal='from'; $event.target.select()"
+                               @input="onDateSeg('from','m',$event)" @blur="onDateSegBlur('from','m',$event)" @focus="activeCal='from'; $event.target.select()"
                                style="border:none;background:none;outline:none;padding:0;width:3ch;font-size:inherit;font-family:inherit;color:inherit;text-align:center;">
                         <span style="color:var(--muted);">/</span>
                         <input type="text" inputmode="numeric" placeholder="yyyy" maxlength="4" size="4"
@@ -264,12 +266,12 @@
                     <div style="display:flex;align-items:center;gap:2px;font-weight:700;">
                         <input type="text" inputmode="numeric" placeholder="dd" maxlength="2" size="2"
                                x-ref="to_d" :value="toParts.d"
-                               @input="onDateSeg('to','d',$event)" @focus="activeCal='to'; $event.target.select()"
+                               @input="onDateSeg('to','d',$event)" @blur="onDateSegBlur('to','d',$event)" @focus="activeCal='to'; $event.target.select()"
                                style="border:none;background:none;outline:none;padding:0;width:3ch;font-size:inherit;font-family:inherit;color:inherit;text-align:center;">
                         <span style="color:var(--muted);">/</span>
                         <input type="text" inputmode="numeric" placeholder="mm" maxlength="2" size="2"
                                x-ref="to_m" :value="toParts.m"
-                               @input="onDateSeg('to','m',$event)" @focus="activeCal='to'; $event.target.select()"
+                               @input="onDateSeg('to','m',$event)" @blur="onDateSegBlur('to','m',$event)" @focus="activeCal='to'; $event.target.select()"
                                style="border:none;background:none;outline:none;padding:0;width:3ch;font-size:inherit;font-family:inherit;color:inherit;text-align:center;">
                         <span style="color:var(--muted);">/</span>
                         <input type="text" inputmode="numeric" placeholder="yyyy" maxlength="4" size="4"
@@ -442,19 +444,46 @@
 
 @push('scripts')
 <script>
-    // Swaps #expenses-region's HTML in place from a fetch of the same
-    // route instead of a full page navigation, so choosing a category,
-    // date range, or pagination page inside it never reloads the page.
+    // Swaps the page's live regions in place from a fetch of the same route
+    // instead of a full page navigation, so choosing a trip, category, date
+    // range, or pagination page never reloads the page.
+    //
+    // The trip picker is a region of its own because it sits outside the
+    // filters/transactions block and has to change with it: its label, and
+    // which row is highlighted, both come from trip_id. Only picking a trip
+    // touches it, but it is cheap to keep the two in step from one response
+    // rather than let them drift apart.
     function ajaxNavigate(url) {
         fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(function (r) { return r.text(); })
             .then(function (html) {
                 var doc = new DOMParser().parseFromString(html, 'text/html');
+
                 var newRegion = doc.getElementById('expenses-region');
                 var oldRegion = document.getElementById('expenses-region');
+                // Whatever came back is not the page we asked for; let the
+                // browser fetch it the ordinary way rather than show a
+                // half-swapped screen.
                 if (!newRegion || !oldRegion) { window.location.href = url; return; }
+
+                var swapped = [];
+
+                // Before the main region, so the two are never briefly out of
+                // sync. Absent when the traveler has only one trip, in which
+                // case there is nothing to switch between.
+                var newTrips = doc.getElementById('expenses-trip-region');
+                var oldTrips = document.getElementById('expenses-trip-region');
+                if (newTrips && oldTrips) { oldTrips.replaceWith(newTrips); swapped.push(newTrips); }
+
                 oldRegion.replaceWith(newRegion);
-                if (window.Alpine) { window.Alpine.initTree(newRegion); }
+                swapped.push(newRegion);
+
+                // x-data is only evaluated when Alpine first walks an element,
+                // and these are brand new nodes.
+                if (window.Alpine) {
+                    swapped.forEach(function (node) { window.Alpine.initTree(node); });
+                }
+
                 window.history.pushState({}, '', url);
             });
     }
@@ -474,7 +503,7 @@
     if (!window.__expensesRegionNavBound) {
         window.__expensesRegionNavBound = true;
         document.addEventListener('click', function (e) {
-            var link = e.target.closest('#expenses-region a[href]');
+            var link = e.target.closest('#expenses-region a[href], #expenses-trip-region a[href]');
             if (!link) return;
             var url = new URL(link.href, window.location.origin);
             if (url.pathname !== window.location.pathname) return;
@@ -563,10 +592,24 @@
             onDateSeg(which, seg, e) {
                 var max = seg === 'y' ? 4 : 2;
                 var digits = e.target.value.replace(/\D/g, '').slice(0, max);
+
+                // A first digit that cannot possibly start a two-digit segment
+                // settles that segment on its own: no day begins 4-9, and no
+                // month begins 2-9 either, since 10, 11 and 12 are the only
+                // two-digit months.
+                //
+                // It has to be PADDED as it settles. Storing the bare "2" is
+                // what broke this: focus moved on to the year, so there was no
+                // way to make it two characters by typing, and applyIfComplete
+                // requires two — so a date entered this way silently never
+                // filtered anything. "2" means February, and February is "02".
+                var settles = (seg === 'd' && digits.length === 1 && parseInt(digits, 10) > 3)
+                           || (seg === 'm' && digits.length === 1 && parseInt(digits, 10) > 1);
+                if (settles) digits = digits.padStart(2, '0');
+
                 if (seg === 'd' && digits.length === max && parseInt(digits, 10) > 31) digits = '31';
                 if (seg === 'm' && digits.length === max && parseInt(digits, 10) > 12) digits = '12';
-                if (seg === 'd' && digits.length === 1 && parseInt(digits, 10) > 3) { e.target.value = digits; var parts0 = which === 'from' ? this.fromParts : this.toParts; parts0.d = digits; this.$nextTick(() => this.$refs[which + '_m'] && this.$refs[which + '_m'].focus()); return; }
-                if (seg === 'm' && digits.length === 1 && parseInt(digits, 10) > 1) { e.target.value = digits; var parts1 = which === 'from' ? this.fromParts : this.toParts; parts1.m = digits; this.$nextTick(() => this.$refs[which + '_y'] && this.$refs[which + '_y'].focus()); return; }
+
                 e.target.value = digits;
                 var parts = which === 'from' ? this.fromParts : this.toParts;
                 parts[seg] = digits;
@@ -576,8 +619,29 @@
                     if (nextRef) this.$nextTick(() => this.$refs[nextRef] && this.$refs[nextRef].focus());
                 }
 
-                var d = parseInt(parts.d, 10), m = parseInt(parts.m, 10), y = parseInt(parts.y, 10);
+                this.applyIfComplete(which);
+            },
+
+            // Leaving a lone "1" in the day or month box means the 1st, or
+            // January — neither of which the two-character check below would
+            // accept. Padding on the way out completes what the typing left
+            // half-finished, rather than dropping the date on the floor.
+            onDateSegBlur(which, seg, e) {
+                if (seg === 'y') return;
+
+                var parts = which === 'from' ? this.fromParts : this.toParts;
+                if (parts[seg].length !== 1) return;
+
+                parts[seg] = parts[seg].padStart(2, '0');
+                e.target.value = parts[seg];
+                this.applyIfComplete(which);
+            },
+
+            applyIfComplete(which) {
+                var parts = which === 'from' ? this.fromParts : this.toParts;
                 if (!(parts.d.length === 2 && parts.m.length === 2 && parts.y.length === 4)) return;
+
+                var d = parseInt(parts.d, 10), m = parseInt(parts.m, 10), y = parseInt(parts.y, 10);
 
                 var dt = new Date(y, m - 1, d);
                 var valid = m >= 1 && m <= 12 && d >= 1 && d <= 31 && y >= 2000 && y <= 2099

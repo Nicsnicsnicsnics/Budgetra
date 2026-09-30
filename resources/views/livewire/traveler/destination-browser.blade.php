@@ -17,7 +17,7 @@
         </div>
     </div>
 
-    {{-- Card grid --}}
+    {{-- Result list --}}
     @if ($this->destinations->isEmpty())
     <div class="dst-empty">
         <div class="dst-empty-icon"><i class="fa-solid fa-compass"></i></div>
@@ -25,53 +25,57 @@
         <p>Try a different search or country filter.</p>
     </div>
     @else
-    <div class="dst-grid">
+    <div class="dst-list">
         @foreach ($this->destinations as $destination)
         @php
             $rating = $destination->attractions_avg_rating;
             $ratingRounded = $rating ? round($rating) : 0;
         @endphp
-        <a href="{{ route('destinations.show', $destination) }}" class="dst-card">
-            <div class="dst-card-media">
+        <a href="{{ route('destinations.show', $destination) }}" class="dst-row">
+            <div class="dst-row-media">
                 @if ($destination->image)
-                <img src="{{ asset('storage/' . $destination->image) }}" alt="{{ $destination->name }}" loading="eager" decoding="async">
+                <img src="{{ asset('storage/' . $destination->image) }}" alt="{{ $destination->name }}" loading="lazy" decoding="async">
                 @else
-                <div class="dst-card-noimg">
+                {{-- The common case: most destinations have no photo, which is
+                     half the reason this is a list and not a grid of
+                     mostly-empty 4:3 boxes. --}}
+                <div class="dst-row-noimg">
                     <i class="fa-solid fa-image"></i>
                     <span>Photo coming soon</span>
                 </div>
                 @endif
-                <div class="dst-card-scrim"></div>
-
-                @if ($destination->country)
-                <span class="dst-chip dst-chip-country">
-                    <i class="fa-solid fa-earth-asia"></i> {{ $destination->country }}
-                </span>
-                @endif
-
-                @if ($rating)
-                <span class="dst-chip dst-chip-rating">
-                    <i class="fa-solid fa-star"></i> {{ number_format($rating, 1) }}
-                </span>
-                @endif
-
-                <div class="dst-card-location">
-                    <i class="fa-solid fa-location-dot"></i> {{ $destination->attractions_count }} {{ Str::plural('attraction', $destination->attractions_count) }}
-                </div>
             </div>
 
-            <div class="dst-card-body">
-                <div class="dst-card-name">{{ $destination->name }}</div>
+            <div class="dst-row-body">
+                <div class="dst-row-name">{{ $destination->name }}</div>
                 @if ($rating)
-                <div class="dst-card-stars">
+                <div class="dst-row-stars">
                     @for ($i = 1; $i <= 5; $i++)
                         <i class="fa-{{ $i <= $ratingRounded ? 'solid' : 'regular' }} fa-star"></i>
                     @endfor
                 </div>
                 @endif
-                <div class="dst-card-cta">
-                    View Details <i class="fa-solid fa-arrow-right"></i>
+                <div class="dst-row-meta">
+                    <span><i class="fa-solid fa-location-dot"></i> {{ $destination->attractions_count }} {{ Str::plural('attraction', $destination->attractions_count) }}</span>
+                    @if ($destination->country)
+                    {{-- Inline now rather than floated over the photo: there is
+                         no tall image left to sit on. --}}
+                    <span class="dst-chip dst-chip-country">
+                        <i class="fa-solid fa-earth-asia"></i> {{ $destination->country }}
+                    </span>
+                    @endif
                 </div>
+            </div>
+
+            <div class="dst-row-end">
+                @if ($rating)
+                <span class="dst-chip dst-chip-rating">
+                    <i class="fa-solid fa-star"></i> {{ number_format($rating, 1) }}
+                </span>
+                @endif
+                {{-- Replaces the "View Details" bar. The whole row is the link,
+                     so it only has to point. --}}
+                <i class="fa-solid fa-chevron-right dst-row-go"></i>
             </div>
         </a>
         @endforeach
@@ -93,85 +97,97 @@
         .dst-select-caret { padding-right: 14px; color: var(--muted); font-size: 10px; pointer-events: none; }
         .dst-filter-input:focus-within, .dst-filter-select:focus-within { border-color: var(--primary); }
 
-        .dst-grid {
-            display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 22px;
-        }
+        .dst-list { display: flex; flex-direction: column; gap: 12px; }
 
-        .dst-card {
-            display: block; text-decoration: none; color: inherit;
-            background: var(--bg-white); border: 1.5px solid var(--border); border-radius: 18px;
-            overflow: hidden; transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
+        /* One result per row: thumbnail, details, rating. Mirrors
+           attraction-browser.blade.php, which these two pages have always done
+           — they are the same component with a country chip instead of a
+           category one. */
+        .dst-row {
+            display: grid; grid-template-columns: 116px 1fr auto; align-items: stretch;
+            text-decoration: none; color: inherit;
+            background: var(--bg-white); border: 1.5px solid var(--border); border-radius: 14px;
+            overflow: hidden; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
         }
-        .dst-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 16px 36px rgba(0,0,0,0.16);
+        /* A smaller lift than the grid's -5px: repeated down a list, a large
+           hop reads as the page twitching. */
+        .dst-row:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 26px rgba(0,0,0,0.12);
             border-color: var(--primary);
         }
+        .dst-row:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
-        .dst-card-media { position: relative; aspect-ratio: 4 / 3; overflow: hidden; background: var(--bg); }
-        .dst-card-media img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .45s ease; }
-        .dst-card:hover .dst-card-media img { transform: scale(1.08); }
+        .dst-row-media { position: relative; overflow: hidden; background: var(--bg); min-height: 104px; }
+        .dst-row-media img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .35s ease; }
+        .dst-row:hover .dst-row-media img { transform: scale(1.06); }
 
-        .dst-card-noimg {
+        .dst-row-noimg {
             position: absolute; inset: 0; display: flex; flex-direction: column;
-            align-items: center; justify-content: center; gap: 8px;
+            align-items: center; justify-content: center; gap: 5px;
             background: linear-gradient(160deg, var(--border-light) 0%, var(--border) 100%);
-            color: var(--muted); text-align: center;
+            color: var(--muted); text-align: center; padding: 6px;
         }
-        .dst-card-noimg i { font-size: 26px; opacity: .6; }
-        .dst-card-noimg span { font-size: 11.5px; font-weight: 600; }
+        .dst-row-noimg i { font-size: 17px; opacity: .6; }
+        .dst-row-noimg span { font-size: 9.5px; font-weight: 600; line-height: 1.25; }
 
-        .dst-card-scrim {
-            position: absolute; inset: 0;
-            background: linear-gradient(to top, rgba(10,8,20,0.82) 0%, rgba(10,8,20,0.15) 42%, rgba(10,8,20,0) 62%);
-            pointer-events: none;
+        .dst-row-body {
+            min-width: 0; padding: 13px 16px;
+            display: flex; flex-direction: column; justify-content: center; gap: 5px;
         }
+        .dst-row-name {
+            font-size: 15px; font-weight: 700; color: var(--dark); line-height: 1.3;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .dst-row-stars { color: #F5A623; font-size: 10.5px; letter-spacing: 2px; }
+        .dst-row-stars i.fa-regular { color: var(--border); }
 
+        .dst-row-meta {
+            display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+            font-size: 12px; font-weight: 600; color: var(--muted); min-width: 0;
+        }
+        .dst-row-meta > span:first-child { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+        .dst-row-meta i { font-size: 10px; }
+
+        .dst-row-end {
+            display: flex; align-items: center; gap: 12px;
+            padding: 13px 16px; flex-shrink: 0;
+        }
+        .dst-row-go { color: var(--muted); font-size: 12px; transition: transform .18s ease, color .18s ease; }
+        .dst-row:hover .dst-row-go { transform: translateX(3px); color: var(--primary); }
+
+        /* Inline now, not floated over a photo, so no absolute positioning and
+           no backdrop blur to sit on. */
         .dst-chip {
-            position: absolute; top: 12px;
             display: inline-flex; align-items: center; gap: 5px;
             font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
-            padding: 5px 10px; border-radius: 99px;
-            backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-            z-index: 2;
+            padding: 4px 9px; border-radius: 99px; white-space: nowrap;
         }
         .dst-chip-country {
-            left: 12px; color: #fff;
-            background: color-mix(in srgb, var(--primary) 55%, rgba(0,0,0,.35));
-            border: 1px solid rgba(255,255,255,.25);
+            color: #fff;
+            background: color-mix(in srgb, var(--primary) 62%, rgba(0,0,0,.28));
+            border: 1px solid rgba(255,255,255,.18);
         }
         .dst-chip-rating {
-            right: 12px; color: #1A1225;
-            background: rgba(255,255,255,.92);
+            color: #1A1225; background: rgba(255,255,255,.92);
+            border: 1px solid var(--border);
         }
         .dst-chip-rating i { color: #F5A623; font-size: 10px; }
 
-        .dst-card-location {
-            position: absolute; left: 14px; right: 14px; bottom: 12px; z-index: 2;
-            color: #fff; font-size: 12px; font-weight: 600;
-            display: flex; align-items: center; gap: 6px;
-            text-shadow: 0 1px 4px rgba(0,0,0,.4);
+        /* The grid got this for free from auto-fill; a fixed three-column row
+           does not, so the breakpoint has to be explicit. 560px matches the
+           one the expenses list already uses. */
+        @media (max-width: 560px) {
+            .dst-row { grid-template-columns: 84px 1fr; }
+            .dst-row-media { min-height: 84px; }
+            .dst-row-noimg span { display: none; }
+            .dst-row-body { padding: 11px 13px; }
+            .dst-row-name { white-space: normal; }
+            .dst-row-end {
+                grid-column: 2; padding: 0 13px 11px;
+                justify-content: space-between;
+            }
         }
-        .dst-card-location i { font-size: 10px; opacity: .85; }
-
-        .dst-card-body { padding: 14px 16px 16px; }
-        .dst-card-name {
-            font-size: 15.5px; font-weight: 700; color: var(--dark); line-height: 1.3;
-            margin-bottom: 6px;
-            display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
-        }
-        .dst-card-stars { color: #F5A623; font-size: 11px; letter-spacing: 2px; margin-bottom: 12px; }
-        .dst-card-stars i.fa-regular { color: var(--border); }
-
-        .dst-card-cta {
-            display: flex; align-items: center; justify-content: space-between;
-            font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
-            color: var(--primary); padding-top: 12px; border-top: 1px solid var(--border);
-            margin-top: 12px;
-            transition: gap .2s ease;
-        }
-        .dst-card-cta i { font-size: 11px; transition: transform .22s ease; }
-        .dst-card:hover .dst-card-cta i { transform: translateX(4px); }
 
         .dst-empty { text-align: center; padding: 64px 24px; min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         .dst-empty-icon {

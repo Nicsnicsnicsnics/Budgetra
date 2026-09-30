@@ -13,6 +13,61 @@
 @media (max-width: 1100px) { .stats-row-4 { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 600px)  { .stats-row-4 { grid-template-columns: 1fr; } }
 
+/* ── Dashboard: charts row ──────────────────────────────────
+   Was an inline style on the row itself, which cannot carry a media
+   query — so its 636px floor (280 + 340 + the gap) held at every
+   width and the page scrolled sideways on a phone. The trip stubs
+   below got a breakpoint; this row never did. 900px is the one
+   .stats-row already uses. */
+.dash-charts-row {
+    display: grid;
+    grid-template-columns: minmax(280px, 1fr) minmax(340px, 1.6fr);
+    gap: 16px;
+    margin-bottom: 14px;
+    align-items: stretch;
+}
+@media (max-width: 900px) { .dash-charts-row { grid-template-columns: 1fr; } }
+
+/* ── Dashboard: panel shell ────────────────────────────────
+   The surface every panel on this page sits on, which each one used
+   to restate inline. .dash-bottom-grid, .alert-item* and
+   .expense-row* come from style.css — they were written for this
+   page and had never been used by any view. */
+.dash-card {
+    background: var(--bg-white);
+    border: 1.5px solid var(--border);
+    border-radius: 16px;
+    padding: 16px 20px;
+    /* A flex column so .dash-card-empty can claim the leftover height. The
+       Recent Expenses card is a grid item and stretches to match the taller
+       right-hand column, which left its empty state stranded at the top of a
+       mostly blank card. */
+    display: flex;
+    flex-direction: column;
+}
+.dash-card + .dash-card { margin-top: 16px; }
+.dash-card-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 12px; margin-bottom: 12px;
+}
+.dash-card-title { font-size: 14px; font-weight: 700; color: var(--dark); }
+.dash-card-link { font-size: 12.5px; font-weight: 700; color: var(--primary); text-decoration: none; white-space: nowrap; }
+.dash-card-empty {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; gap: 8px; padding: 22px 12px;
+    /* Takes whatever height the rows would have filled, so the message sits
+       in the middle of it rather than against the heading. */
+    flex: 1;
+}
+/* Not var(--border), which the chart empty states above use: at 1.2:1
+   against the card on nightflight that icon is effectively invisible. */
+.dash-card-empty i { font-size: 22px; color: var(--muted); opacity: .5; }
+.dash-card-empty p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+/* The whole row is a link; it must not look like one. */
+.dash-alert-link { text-decoration: none; color: inherit; }
+.dash-alert-link:hover .alert-item-title { color: var(--primary); }
+
 /* ── Dashboard: active-trip stubs ──────────────────────────────────
    A boarding pass — the trip on the left, a tear-off day counter on
    the right. The perforation is a dashed border with two notches
@@ -159,7 +214,7 @@
      once the profile exists, and holds across every tab. --}}
 <div class="empty-state-center" style="min-height:80vh;">
     <div style="width:64px;height:64px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
-        <i class="fa-solid fa-house" style="font-size:28px;color:#fff;"></i>
+        <x-nav-icon icon="dashboard" style="font-size:28px;color:#fff;" />
     </div>
     <div class="empty-state-swap" data-empty-when="profile">
         <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">Set up your profile first</h2>
@@ -184,7 +239,7 @@
      cards, just the standard empty-state block used across the app. --}}
 <div class="empty-state-center" style="min-height:80vh;">
     <div style="width:64px;height:64px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
-        <i class="fa-solid fa-house" style="font-size:28px;color:#fff;"></i>
+        <x-nav-icon icon="dashboard" style="font-size:28px;color:#fff;" />
     </div>
     <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">No trips yet</h2>
     <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Plan a trip first to see your trip statistics.</p>
@@ -276,15 +331,62 @@
     </div>
 </div>
 
+{{-- Needs your attention.
+
+     ExpenseObserver raises budget_warning at 50-80% of a category budget and
+     budget_alert past 80%, SendTripReminders and SendItineraryReminders raise
+     the other two. Until now all four went straight to /notifications and the
+     dashboard never mentioned them, so the page could show a trip 140% through
+     its food budget with nothing but a red bar to say so.
+
+     Renders only when there is something unread to show: on a quiet account
+     this is the page it has always been. .alert-item* is from style.css and
+     was written for exactly this panel. --}}
+@if ($attentionAlerts->isNotEmpty())
+<div class="dash-card" style="margin-bottom:14px;">
+    <div class="dash-card-head">
+        <div class="dash-card-title">
+            <i class="fa-solid fa-triangle-exclamation" style="color:var(--warning);margin-right:6px;"></i>Needs your attention
+        </div>
+        <a href="{{ route('notifications.index') }}" class="dash-card-link">All notifications &rarr;</a>
+    </div>
+    @foreach ($attentionAlerts as $alert)
+    {{-- Title, icon and tile colour come from the same helper the
+         notifications page uses, so a type is never named two things. --}}
+    @php $meta = notification_meta($alert->type); @endphp
+    <a href="{{ route('notifications.index') }}" class="alert-item dash-alert-link">
+        <div class="alert-item-icon {{ $meta['style'] }}"><i class="fa-solid {{ $meta['icon'] }}"></i></div>
+        <div style="min-width:0;">
+            <div class="alert-item-title">{{ $meta['title'] }}</div>
+            <div class="alert-item-sub">{{ $alert->message }}</div>
+            <div class="alert-item-sub" style="opacity:.7;">
+                @if ($alert->trip){{ trip_display_name($alert->trip) }} &middot; @endif{{ $alert->created_at->diffForHumans() }}
+            </div>
+        </div>
+    </a>
+    @endforeach
+</div>
+@endif
+
 {{-- Active trips. Carries the spend bar that "Budget Usage by Trip" used to
-     show separately — same trips, same figures, so it lived here instead. --}}
-@if ($activeTrips->isNotEmpty())
+     show separately — same trips, same figures, so it lived here instead.
+
+     The heading renders either way. Active means not past and not draft, so a
+     traveler whose trips have all finished still reaches this page with stats
+     and charts to look at — and used to find the whole section silently
+     missing, with no hint that planning another one was the way out of it. --}}
 <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px;">
     <div style="font-size:15px;font-weight:700;color:var(--dark);">Active Trips</div>
     <a href="{{ route('saved-trips') }}" style="font-size:12.5px;font-weight:700;color:var(--primary);text-decoration:none;">View all trips →</a>
 </div>
 
-@foreach ($activeTrips as $trip)
+@if ($activeTrips->isNotEmpty())
+
+{{-- Three stubs, not all of them: a boarding pass is tall, and ten active
+     trips pushed the charts entirely below the fold. Capped here rather
+     than in the controller because the Active Trips KPI above counts the
+     same collection and has to keep seeing every one. --}}
+@foreach ($activeTrips->take(3) as $trip)
 @php
     $spent     = (float) ($trip->total_spent ?? 0);
     $budget    = (float) ($trip->budget_limit ?? 0);
@@ -388,10 +490,33 @@
     </div>
 </div>
 @endforeach
+
+@if ($activeTrips->count() > 3)
+@php $hidden = $activeTrips->count() - 3; @endphp
+<div style="margin:-4px 0 14px;font-size:12.5px;color:var(--muted);">
+    +{{ $hidden }} more active {{ Str::plural('trip', $hidden) }} &middot;
+    <a href="{{ route('saved-trips') }}" style="color:var(--primary);font-weight:700;text-decoration:none;">View all</a>
+</div>
+@endif
+
+@else
+{{-- Their other trips are all in the past, so the wording is "no active
+     trips" rather than the page-level "no trips yet", and the button says
+     Plan a Trip rather than Plan Your First Trip. --}}
+<div style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:16px;padding:32px 20px;margin-bottom:14px;display:flex;flex-direction:column;align-items:center;text-align:center;">
+    <div style="width:48px;height:48px;border-radius:14px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;margin-bottom:14px;">
+        <i class="fa-solid fa-suitcase-rolling" style="font-size:20px;color:var(--primary);"></i>
+    </div>
+    <div style="font-size:15px;font-weight:700;color:var(--dark);margin-bottom:6px;">No active trips yet</div>
+    <p style="color:var(--muted);font-size:13px;margin:0 0 20px;max-width:320px;line-height:1.6;">Your trips have all wrapped up. Plan another one to see it tracked here.</p>
+    <a href="{{ route('trips.plan') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:12px 28px;font-size:12.5px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
+        <i class="fa-solid fa-plane"></i> Plan a Trip
+    </a>
+</div>
 @endif
 
 {{-- Charts row --}}
-<div style="display:grid;grid-template-columns:minmax(280px,1fr) minmax(340px,1.6fr);gap:16px;margin-bottom:14px;align-items:stretch;">
+<div class="dash-charts-row">
 
     {{-- Donut: spend by category --}}
     <div style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:16px;padding:16px 20px;">
@@ -448,7 +573,17 @@
         <div style="font-size:14px;font-weight:700;color:var(--dark);margin-bottom:2px;">Monthly Spending</div>
         <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Last 6 months</div>
 
-        @php $msMax = max(1, collect($monthlySpend)->max('value')); @endphp
+        @php $msMax = collect($monthlySpend)->max('value') ?? 0; @endphp
+
+        {{-- Every month at zero drew six 2%-high stubs with their amounts
+             hidden — a chart that looked broken rather than empty. Matched to
+             the donut's empty state next door. --}}
+        @if ($msMax <= 0)
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px 12px;">
+            <i class="fa-solid fa-chart-column" style="font-size:24px;color:var(--border);margin-bottom:8px;"></i>
+            <p style="color:var(--muted);font-size:13px;margin:0;">Log an expense to see how your spending moves month to month.</p>
+        </div>
+        @else
         <div style="flex:1;display:flex;align-items:flex-end;gap:14px;min-height:110px;padding-top:8px;">
             @foreach ($monthlySpend as $m)
             @php $barPct = max(2, round($m['value'] / $msMax * 100)); @endphp
@@ -459,6 +594,152 @@
                 <span style="font-size:11px;color:var(--muted);font-weight:600;">{{ $m['label'] }}</span>
             </div>
             @endforeach
+        </div>
+        @endif
+    </div>
+</div>
+
+{{-- Bottom grid: what happened, what is next, what it is being saved for.
+     .dash-bottom-grid (1fr 320px, collapsing at 1100px) is from style.css and
+     had never been used by a view. --}}
+<div class="dash-bottom-grid">
+
+    {{-- Recent expenses --}}
+    <div class="dash-card">
+        <div class="dash-card-head">
+            <div class="dash-card-title">Recent Expenses</div>
+            <a href="{{ route('expenses.index') }}" class="dash-card-link">View all &rarr;</a>
+        </div>
+
+        @php
+            // Glyph only, not colour: .expense-row-icon's tile is one themed
+            // pair for every row, so the icon is what tells the categories
+            // apart. The donut next door is where the palette lives.
+            $catIcons = [
+                'Transportation'     => 'fa-car',
+                'Accommodation'      => 'fa-bed',
+                'Food'               => 'fa-utensils',
+                'Activities'         => 'fa-camera',
+                'Shopping'           => 'fa-bag-shopping',
+                'Emergency Expenses' => 'fa-kit-medical',
+            ];
+        @endphp
+
+        @forelse ($recentExpenses as $expense)
+        <div class="expense-row">
+            <div class="expense-row-icon">
+                <i class="fa-solid {{ $catIcons[$expense->category] ?? 'fa-receipt' }}"></i>
+            </div>
+            <div class="expense-row-name" style="min-width:0;">
+                <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                    {{ $expense->description ?: $expense->category }}
+                </div>
+                <div class="expense-row-time">
+                    {{ trip_display_name($expense->trip) }} &middot; {{ $expense->expense_date->format('M j') }}
+                </div>
+            </div>
+            {{-- The figure they actually handed over: originalAmountLabel()
+                 prints the foreign amount when the expense was paid in one,
+                 and pesos otherwise. --}}
+            <div class="expense-row-amt">{{ $expense->originalAmountLabel() }}</div>
+        </div>
+        @empty
+        <div class="dash-card-empty">
+            <i class="fa-solid fa-receipt"></i>
+            <p>Nothing logged yet. Add an expense and it will show up here.</p>
+        </div>
+        @endforelse
+    </div>
+
+    <div>
+        {{-- Today & next up --}}
+        <div class="dash-card">
+            <div class="dash-card-head">
+                <div class="dash-card-title">Today &amp; Next Up</div>
+                <a href="{{ route('itinerary.index') }}" class="dash-card-link">Itinerary &rarr;</a>
+            </div>
+
+            @php
+                // The same four arms getEventsProperty() colours the calendar
+                // with, so an item looks the same in both places.
+                $evMeta = [
+                    'Flight'         => ['icon' => 'fa-plane',  'color' => '#1D4ED8'],
+                    'Hotel'          => ['icon' => 'fa-bed',    'color' => '#16A34A'],
+                    'Transportation' => ['icon' => 'fa-car',    'color' => '#D97706'],
+                    'Activity'       => ['icon' => 'fa-camera', 'color' => '#8B3A10'],
+                ];
+            @endphp
+
+            @php
+                // Filtered before the loop rather than skipped inside it, so
+                // $loop->first means "first heading actually drawn" — with a
+                // @continue it still meant "Today", and a day with nothing on
+                // it left "Coming up" wearing Today's top margin.
+                $eventGroups = array_values(array_filter(
+                    [['Today', $todayEvents], ['Coming up', $upcomingEvents]],
+                    fn ($group) => $group[1]->isNotEmpty()
+                ));
+            @endphp
+
+            @if (empty($eventGroups))
+            <div class="dash-card-empty">
+                <i class="fa-regular fa-calendar"></i>
+                <p>No scheduled events on your active trips.</p>
+            </div>
+            @else
+                @foreach ($eventGroups as [$label, $events])
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:{{ $loop->first ? '0' : '14px' }} 0 6px;">{{ $label }}</div>
+                @foreach ($events as $item)
+                @php $ev = $evMeta[$item->type] ?? $evMeta['Activity']; @endphp
+                <div class="alert-item" style="padding:9px 0;">
+                    <div class="alert-item-icon" style="background:var(--border-light);color:{{ $ev['color'] }};">
+                        <i class="fa-solid {{ $ev['icon'] }}"></i>
+                    </div>
+                    <div style="min-width:0;">
+                        <div class="alert-item-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ $item->title }}</div>
+                        <div class="alert-item-sub">
+                            {{ $label === 'Today' ? $item->start_datetime->format('g:i A') : $item->start_datetime->format('M j, g:i A') }}
+                            @if ($item->trip) &middot; {{ trip_display_name($item->trip) }} @endif
+                        </div>
+                    </div>
+                </div>
+                @endforeach
+                @endforeach
+            @endif
+        </div>
+
+        {{-- Savings goals --}}
+        <div class="dash-card">
+            <div class="dash-card-head">
+                <div class="dash-card-title">Savings Goals</div>
+                <a href="{{ route('savings.index') }}" class="dash-card-link">View all &rarr;</a>
+            </div>
+
+            @forelse ($savingsSnapshot as $goal)
+            <div style="{{ $loop->last ? '' : 'margin-bottom:14px;' }}">
+                <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:6px;">
+                    <span style="font-size:13px;font-weight:600;color:var(--dark);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ $goal['name'] }}</span>
+                    <span style="font-size:12.5px;font-weight:700;color:var(--dark);">{{ $goal['pct'] }}%</span>
+                </div>
+                <div style="height:7px;background:var(--border-light);border-radius:99px;overflow:hidden;margin-bottom:5px;">
+                    {{-- The 'progress' ramp, not the default 'spend' one: more
+                         saved is better, so this runs red to teal. --}}
+                    <div style="height:100%;width:{{ $goal['pct'] }}%;background:{{ meter_color((float) $goal['pct'], 'progress') }};border-radius:99px;transition:width .4s ease;"></div>
+                </div>
+                <div style="font-size:11.5px;color:var(--muted);">
+                    {{ currency_symbol() }}{{ number_format($goal['saved'], 0) }} of {{ currency_symbol() }}{{ number_format($goal['target'], 0) }}
+                    @if ($goal['deadline']) &middot; by {{ $goal['deadline']->format('M j, Y') }} @endif
+                </div>
+            </div>
+            @empty
+            {{-- A goal is created per trip the first time /savings is opened,
+                 so "none yet" here usually means that page has never been
+                 visited, not that nothing is being saved. --}}
+            <div class="dash-card-empty">
+                <i class="fa-solid fa-piggy-bank"></i>
+                <p>Open Saving Goals to start tracking what each trip needs.</p>
+            </div>
+            @endforelse
         </div>
     </div>
 </div>

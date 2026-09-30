@@ -9,7 +9,6 @@ use Livewire\Component;
 
 class MultiTripHub extends Component
 {
-    public string $search         = '';
     public ?int   $detailTripId   = null;
     public array  $compareIds     = [];
     public bool   $showComparison = false;
@@ -75,14 +74,11 @@ class MultiTripHub extends Component
         $query = auth()->user()->accessibleTrips()
             ->where(fn ($q) => $q->whereNull('status')->orWhere('status', '!=', 'draft'))
             ->withSum('expenses', 'amount')->latest('start_date');
-        if ($this->search !== '') {
-            // Same matching as Saved Trips: a renamed trip should still be
-            // findable by the place it goes to, and vice versa.
-            $term = '%' . str_replace('%', '\%', $this->search) . '%';
-            $query->where(fn ($w) => $w->whereLike('destination', $term, caseSensitive: false)
-                                       ->orWhereLike('trip_name', $term, caseSensitive: false)
-                                       ->orWhereLike('leg2_destination', $term, caseSensitive: false));
-        }
+        // Searching is done in the browser now (trip_search_haystack() is the
+        // client-side counterpart of the WHERE clause that used to live here).
+        // Filtering server-side meant every keystroke shrank this collection,
+        // and fetchCompareData() would then look up a selected trip that was
+        // no longer in it and dereference null.
         return $query->get()->map(function (Trip $trip) {
             $today = Carbon::today();
             $spent = $trip->expenses_sum_amount ?? 0;

@@ -15,7 +15,7 @@ class AlertTest extends TestCase
     public function test_alerts_page_loads(): void
     {
         $user = User::factory()->create();
-        $this->actingAs($user)->get('/alerts')->assertStatus(200);
+        $this->actingAs($user)->get('/notifications')->assertStatus(200);
     }
 
     public function test_alert_is_created_when_budget_threshold_exceeded(): void
@@ -48,9 +48,9 @@ class AlertTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->from(route('alerts.index'))
-            ->patch("/alerts/{$notif->id}/read")
-            ->assertRedirect(route('alerts.index'));
+            ->from(route('notifications.index'))
+            ->patch("/notifications/{$notif->id}/read")
+            ->assertRedirect(route('notifications.index'));
         $this->assertDatabaseHas('notifications', ['id' => $notif->id, 'is_read' => true]);
     }
 
@@ -67,11 +67,11 @@ class AlertTest extends TestCase
             'type' => 'expense_added', 'message' => 'Test alert', 'is_read' => false,
         ]);
 
-        $referer = route('alerts.index', ['trip_id' => $older->id]);
+        $referer = route('notifications.index', ['trip_id' => $older->id]);
 
         $this->actingAs($user)
             ->from($referer)
-            ->patch("/alerts/{$notif->id}/read")
+            ->patch("/notifications/{$notif->id}/read")
             ->assertRedirect($referer);
     }
 
@@ -85,11 +85,11 @@ class AlertTest extends TestCase
             'type' => 'expense_added', 'message' => 'Test alert', 'is_read' => false,
         ]);
 
-        $referer = route('alerts.index', ['trip_id' => $older->id]);
+        $referer = route('notifications.index', ['trip_id' => $older->id]);
 
         $this->actingAs($user)
             ->from($referer)
-            ->patch('/alerts/read-all')
+            ->patch('/notifications/read-all')
             ->assertRedirect($referer);
     }
 }

@@ -1,11 +1,13 @@
 <div style="display:flex;flex-direction:column;flex:1;">
     @php $fmtDate = fn ($d, $f) => str_replace('Sep', 'Sept', $d->format($f)); @endphp
-    @if ($trips->isEmpty() && !$search)
+    {{-- No !$search guard needed any more: the collection no longer shrinks
+         while you type, so an empty one really does mean no trips. --}}
+    @if ($trips->isEmpty())
     {{-- Pure empty state — no header, no stats --}}
     @php $mthNeedsProfile = ! auth()->user()?->userProfile; @endphp
     <div class="empty-state-center" style="min-height:80vh;">
         <div style="width:64px;height:64px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
-            <i class="fa-solid fa-layer-group" style="font-size:28px;color:#fff;"></i>
+            <x-nav-icon icon="multi-trips" style="font-size:28px;color:#fff;" />
         </div>
         @if ($mthNeedsProfile)
         <div class="empty-state-swap" data-empty-when="profile">
@@ -21,8 +23,8 @@
         </div>
         @endif
         <div class="empty-state-swap" @if ($mthNeedsProfile) data-empty-when="skipped" @endif>
-            <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">No trips planned yet</h2>
-            <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Plan a trip first to view active and past trips, and compare trips.</p>
+            <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">No trips yet</h2>
+            <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Plan a trip first to view your trips and compare trips.</p>
             <a href="{{ route('trips.plan') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
                 <i class="fa-solid fa-plane"></i> Plan Your First Trip
             </a>
@@ -38,8 +40,23 @@
             ['key' => 'active', 'label' => 'Active Trips', 'icon' => 'fa-solid fa-suitcase-rolling',  'items' => $mthActiveTrips],
             ['key' => 'past',   'label' => 'Past Trips',   'icon' => 'fa-solid fa-clock-rotate-left', 'items' => $mthPastTrips],
         ];
+
+        // Filtering runs in the browser, so every trip is already on the page
+        // and the server set never shrinks while you type. That also removes
+        // the crash where comparing two trips and then searching left
+        // fetchCompareData() holding an id that was no longer in the list.
+        $mthIndex = collect($mthGroups)->mapWithKeys(fn ($g) => [
+            $g['key'] => $g['items']->map(fn ($t) => trip_search_haystack($t))->values()->all(),
+        ])->all();
     @endphp
-    <div x-data="{ tab: 'active' }" style="display:flex;flex-direction:column;">
+    <div x-data="{
+            tab: 'active',
+            q: '',
+            get needle() { return this.q.trim().toLowerCase(); },
+            matches(hay) { return this.needle === '' || hay.includes(this.needle); },
+            countFor(key) { return this.index[key].filter(h => this.matches(h)).length; },
+            index: @js($mthIndex),
+         }" style="display:flex;flex-direction:column;">
         {{-- Browser-tab-style switcher --}}
         <div style="display:flex;align-items:flex-end;gap:4px;flex-shrink:0;flex-wrap:wrap;">
             @foreach ($mthGroups as $mthGroup)
@@ -50,52 +67,46 @@
                     <i class="{{ $mthGroup['icon'] }}" style="color:#fff;font-size:11px;"></i>
                 </div>
                 <span style="font-size:14px;font-weight:700;">{{ $mthGroup['label'] }}</span>
-                <span style="font-size:11px;font-weight:800;{{ $mthCount > 0 ? 'color:#fff;background:var(--primary);' : 'color:var(--muted);background:var(--bg);' }}border-radius:99px;min-width:20px;height:20px;padding:0 6px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">{{ $mthCount }}</span>
+                <span x-text="countFor('{{ $mthGroup['key'] }}')"
+                      :style="'font-size:11px;font-weight:800;border-radius:99px;min-width:20px;height:20px;padding:0 6px;display:inline-flex;align-items:center;justify-content:center;line-height:1;' + (countFor('{{ $mthGroup['key'] }}') > 0 ? 'color:#fff;background:var(--primary);' : 'color:var(--muted);background:var(--bg);')"></span>
             </button>
             @endforeach
 
             {{-- Right-aligned via margin-left:auto on .page-search --}}
+            {{-- No spinner: there is no round trip to wait for any more. --}}
             <label class="page-search">
-                {{-- The icon doubles as the in-flight indicator: the round trip
-                     to the DB runs ~0.5s, so without it the box looks frozen
-                     between keystroke and result. 500ms debounce (not 300)
-                     keeps a fast typist from queueing overlapping requests
-                     that then resolve one behind the other. --}}
-                <i class="fa-solid fa-magnifying-glass" wire:loading.remove wire:target="search"></i>
-                <i class="fa-solid fa-spinner fa-spin" wire:loading wire:target="search" style="color:var(--primary);"></i>
-                <input type="text" wire:model.live.debounce.500ms="search" placeholder="Search trips">
-                <button type="button" wire:click="$set('search', '')" x-show="$wire.search" x-cloak title="Clear search">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" x-model="q" placeholder="Search trips">
+                <button type="button" x-show="q" x-cloak @click="q = ''" title="Clear search">
                     <i class="fa-solid fa-xmark"></i>
                 </button>
             </label>
         </div>
 
         {{-- Tab panels --}}
-        <div style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:0 16px 16px 16px;padding:24px;display:flex;flex-direction:column;position:relative;">
+        <div class="tab-panel">
         @foreach ($mthGroups as $mthGroup)
-        <div x-show="tab === '{{ $mthGroup['key'] }}'" x-cloak style="display:flex;flex-direction:column;">
+        <div x-show="tab === '{{ $mthGroup['key'] }}'" x-cloak class="tab-pane">
             @if ($mthGroup['items']->isEmpty())
             {{-- A search that matched nothing is a different situation from an
                  empty tab: the trips may well exist, just not under this term.
                  Saying "No active trips yet" there would be wrong, and would
                  point the traveler at planning a trip they already have. --}}
-            <div style="min-height:360px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 20px;">
+            <div class="tab-empty">
                 <div style="width:56px;height:56px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:18px;">
-                    <i class="{{ $search ? 'fa-solid fa-magnifying-glass' : $mthGroup['icon'] }}" style="font-size:24px;color:#fff;"></i>
+                    <x-nav-icon :icon="$mthGroup['icon']" style="font-size:24px;color:#fff;" x-show="q.trim() === ''" />
+                    <i class="fa-solid fa-magnifying-glass" x-show="q.trim() !== ''" x-cloak style="font-size:22px;color:#fff;"></i>
                 </div>
-                @if ($search)
-                <h3 style="font-weight:700;font-size:17px;margin:0 0 6px;color:var(--dark);">No trips found</h3>
-                <p style="color:var(--muted);font-size:13px;max-width:280px;line-height:1.6;margin:0;">Try searching another trip.</p>
-                @else
-                <h3 style="font-weight:700;font-size:17px;margin:0 0 6px;color:var(--dark);">No {{ $mthGroup['label'] }} yet</h3>
-                <p style="color:var(--muted);font-size:13px;max-width:280px;line-height:1.6;margin:0;">
+                <h3 x-show="q.trim() === ''" style="font-weight:700;font-size:17px;margin:0 0 6px;color:var(--dark);">No {{ $mthGroup['label'] }} yet</h3>
+                <p x-show="q.trim() === ''" style="color:var(--muted);font-size:13px;max-width:280px;line-height:1.6;margin:0;">
                     @if ($mthGroup['key'] === 'active')
                     Plan a trip first to see your active trips.
                     @else
                     Plan a trip first to see your past trips.
                     @endif
                 </p>
-                @endif
+                <h3 x-show="q.trim() !== ''" x-cloak style="font-weight:700;font-size:17px;margin:0 0 6px;color:var(--dark);">No trips found</h3>
+                <p x-show="q.trim() !== ''" x-cloak style="color:var(--muted);font-size:13px;max-width:280px;line-height:1.6;margin:0;">Try searching another trip.</p>
             </div>
             @else
             <div style="display:flex;flex-wrap:wrap;gap:20px;justify-content:center;">
@@ -112,11 +123,14 @@
                     $statusLabel = match ($trip->status) { 'active' => 'Ongoing', 'upcoming' => 'Upcoming', 'past' => 'Finished', default => ucfirst($trip->status) };
                     $isPickedForCompare = in_array($trip->id, $compareIds, true);
                 @endphp
-                <div class="card" style="overflow:hidden;border-radius:14px;width:340px;flex-shrink:0;{{ $isPickedForCompare ? 'border-color:var(--primary);box-shadow:0 0 0 2px var(--primary);' : '' }}">
+                {{-- x-show rather than dropping the node: a card can be
+                     selected for comparison, and unmounting it mid-search
+                     would lose that. --}}
+                <div class="card" x-show="matches(@js(trip_search_haystack($trip)))" style="overflow:hidden;border-radius:14px;width:340px;flex-shrink:0;{{ $isPickedForCompare ? 'border-color:var(--primary);box-shadow:0 0 0 2px var(--primary);' : '' }}">
                     <div style="position:relative;height:200px;background:linear-gradient(135deg,var(--primary),#C8874A);">
-                        @if ($trip->cover_image)
-                        <img src="{{ $trip->cover_image }}" style="width:100%;height:100%;object-fit:cover;display:block;" alt="{{ $trip->destination }}">
-                        @endif
+                        {{-- Always resolves: a trip with no photo of its own is
+                             given one from the fallback pool. --}}
+                        <img src="{{ $trip->coverImageUrl() }}" style="width:100%;height:100%;object-fit:cover;display:block;" alt="{{ $trip->destination }}">
                         <div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0.15),rgba(0,0,0,0.55));"></div>
 
                         {{-- Stacked badges top-left --}}
@@ -182,6 +196,14 @@
                 </div>
                 @endforeach
             </div>
+            {{-- Only while a search has filtered this tab down to nothing. --}}
+            <div x-show="q.trim() !== '' && countFor('{{ $mthGroup['key'] }}') === 0" x-cloak class="tab-empty">
+                <div style="width:56px;height:56px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:18px;">
+                    <i class="fa-solid fa-magnifying-glass" style="font-size:22px;color:#fff;"></i>
+                </div>
+                <h3 style="font-weight:700;font-size:17px;margin:0 0 6px;color:var(--dark);">No trips found</h3>
+                <p style="color:var(--muted);font-size:13px;max-width:280px;line-height:1.6;margin:0;">Try searching another trip.</p>
+            </div>
             @endif
         </div>
         @endforeach
@@ -216,9 +238,7 @@
             <div class="text-muted" style="font-size:13px;margin-bottom:16px;">{{ $fmtDate($dt->start_date, 'M j') }} - {{ $fmtDate($dt->end_date, 'M j, Y') }}</div>
 
             <div style="height:170px;border-radius:14px;overflow:hidden;margin-bottom:18px;background:linear-gradient(135deg,var(--primary),#C8874A);">
-                @if ($dt->cover_image)
-                <img src="{{ $dt->cover_image }}" style="width:100%;height:100%;object-fit:cover;display:block;" alt="{{ $dt->destination }}">
-                @endif
+                <img src="{{ $dt->coverImageUrl() }}" style="width:100%;height:100%;object-fit:cover;display:block;" alt="{{ $dt->destination }}">
             </div>
 
             <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;">

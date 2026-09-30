@@ -1,5 +1,5 @@
 @extends('layouts.app')
-@section('title', 'Alerts')
+@section('title', 'Notifications')
 @push('styles')
 <style>
     /* While the list fits, the card is content-height and there is no free
@@ -41,7 +41,7 @@
 @php $alNeedsProfile = ! auth()->user()?->userProfile; @endphp
 <div class="empty-state-center" style="min-height:80vh;">
     <div style="width:64px;height:64px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
-        <i class="fa-solid fa-bell" style="font-size:28px;color:#fff;"></i>
+        <x-nav-icon icon="notifications" style="font-size:28px;color:#fff;" />
     </div>
     @if ($alNeedsProfile)
     <div class="empty-state-swap" data-empty-when="profile">
@@ -57,7 +57,7 @@
     </div>
     @endif
     <div class="empty-state-swap" @if ($alNeedsProfile) data-empty-when="skipped" @endif>
-        <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">No trips yet</h2>
+        <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">No notifications yet</h2>
         <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Plan a trip first to start receiving budget alerts and notifications.</p>
         <a href="{{ route('trips.plan') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
             <i class="fa-solid fa-plane"></i> Plan Your First Trip
@@ -69,7 +69,7 @@
 {{-- Has trips but no notifications --}}
 <div class="empty-state-center" style="min-height:80vh;">
     <div style="width:64px;height:64px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
-        <i class="fa-solid fa-bell" style="font-size:28px;color:#fff;"></i>
+        <x-nav-icon icon="notifications" style="font-size:28px;color:#fff;" />
     </div>
     <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">All caught up!</h2>
     <p style="color:var(--muted);font-size:14px;max-width:320px;line-height:1.6;">
@@ -79,29 +79,6 @@
 
 @else
 @php
-    // Icon/color per notification type — same three-way palette (danger /
-    // success / neutral) the mockup used, mapped onto this app's own type
-    // strings instead of hardcoded hex so it adapts across themes.
-    $typeMeta = function (string $type): array {
-        return match (true) {
-            $type === 'budget_alert'                                  => ['style' => 'danger',  'icon' => 'fa-triangle-exclamation', 'title' => 'Budget exceeded'],
-            $type === 'budget_warning'                                => ['style' => 'warning', 'icon' => 'fa-clock',               'title' => 'Budget almost reached'],
-            $type === 'trip_created'                                  => ['style' => 'success', 'icon' => 'fa-circle-check',        'title' => 'Trip saved'],
-            $type === 'savings_goal_reached'                          => ['style' => 'success', 'icon' => 'fa-piggy-bank',          'title' => 'Savings goal reached'],
-            $type === 'expense_added'                                 => ['style' => 'neutral', 'icon' => 'fa-receipt',             'title' => 'Receipt scanned and added'],
-            $type === 'trip_shared'                                   => ['style' => 'success', 'icon' => 'fa-user-group',         'title' => 'Added to a trip'],
-            $type === 'group_member_added'                            => ['style' => 'neutral', 'icon' => 'fa-user-plus',          'title' => 'Added as a travel companion'],
-            $type === 'trip_reminder'                                 => ['style' => 'neutral', 'icon' => 'fa-plane',               'title' => 'Trip reminder'],
-            $type === 'itinerary_reminder'                            => ['style' => 'neutral', 'icon' => 'fa-calendar',            'title' => 'Itinerary reminder'],
-            default                                                    => ['style' => 'neutral', 'icon' => 'fa-bell',               'title' => 'Notification'],
-        };
-    };
-    $styleColors = [
-        'danger'  => ['bg' => 'rgba(220,38,38,0.14)',  'fg' => '#DC2626'],
-        'warning' => ['bg' => 'rgba(217,119,6,0.14)',  'fg' => '#D97706'],
-        'success' => ['bg' => 'rgba(22,163,74,0.14)',  'fg' => '#16A34A'],
-        'neutral' => ['bg' => 'var(--border)',          'fg' => 'var(--muted)'],
-    ];
     $grouped = $notifications->getCollection()->groupBy(fn ($n) => $n->created_at->isToday() ? 'Today' : 'Earlier');
 @endphp
 
@@ -128,7 +105,7 @@
             @if ($unreadCount > 0)
             <span style="padding:3px 10px;border-radius:99px;background:var(--primary);color:#fff;font-size:11px;font-weight:700;">{{ $unreadCount }} unread</span>
             @endif
-            <form method="POST" action="{{ route('alerts.read-all') }}">
+            <form method="POST" action="{{ route('notifications.read-all') }}">
                 @csrf @method('PATCH')
                 <button class="btn btn-outline btn-sm" type="submit" {{ $unreadCount === 0 ? 'disabled' : '' }}>
                     <i class="fa-solid fa-check-double"></i> Mark all as read
@@ -160,19 +137,18 @@
         {{ $groupLabel }}
     </div>
     @foreach ($groupNotifs as $notif)
-    @php
-        $meta   = $typeMeta($notif->type);
-        $colors = $styleColors[$meta['style']];
-    @endphp
+    {{-- Title, icon and tile colours per type, shared with the dashboard's
+         attention panel so one type is never named two different things. --}}
+    @php $meta = notification_meta($notif->type); @endphp
     <div x-show="tab === 'all' || {{ $notif->is_read ? 'false' : 'true' }}"
          style="position:relative;{{ !$loop->last ? 'border-bottom:1px solid var(--border);' : '' }}">
         @if (!$notif->is_read)
-        <form method="POST" action="{{ route('alerts.read', $notif) }}" style="margin:0;">
+        <form method="POST" action="{{ route('notifications.read', $notif) }}" style="margin:0;">
             @csrf @method('PATCH')
             <button type="submit" style="display:grid;grid-template-columns:28px 1fr;column-gap:10px;width:100%;padding:14px 20px;background:none;border:none;text-align:left;cursor:pointer;font-family:inherit;transition:background .15s;"
                     onmouseenter="this.style.background='var(--bg)'" onmouseleave="this.style.background='none'">
-                <span style="grid-column:1;width:28px;height:28px;border-radius:50%;background:{{ $colors['bg'] }};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-                    <i class="fa-solid {{ $meta['icon'] }}" style="color:{{ $colors['fg'] }};font-size:12px;"></i>
+                <span style="grid-column:1;width:28px;height:28px;border-radius:50%;background:{{ $meta['bg'] }};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <i class="fa-solid {{ $meta['icon'] }}" style="color:{{ $meta['fg'] }};font-size:12px;"></i>
                 </span>
                 <span style="grid-column:2;min-width:0;">
                     <span style="display:block;font-size:14px;font-weight:700;color:var(--dark);line-height:1.3;">{{ $meta['title'] }}</span>
@@ -185,8 +161,8 @@
         </form>
         @else
         <div style="display:grid;grid-template-columns:28px 1fr;column-gap:10px;padding:14px 20px;">
-            <div style="grid-column:1;width:28px;height:28px;border-radius:50%;background:{{ $colors['bg'] }};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-                <i class="fa-solid {{ $meta['icon'] }}" style="color:{{ $colors['fg'] }};font-size:12px;"></i>
+            <div style="grid-column:1;width:28px;height:28px;border-radius:50%;background:{{ $meta['bg'] }};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <i class="fa-solid {{ $meta['icon'] }}" style="color:{{ $meta['fg'] }};font-size:12px;"></i>
             </div>
             <div style="grid-column:2;min-width:0;">
                 <p style="margin:0;font-size:14px;font-weight:700;color:var(--dark);line-height:1.3;">{{ $meta['title'] }}</p>

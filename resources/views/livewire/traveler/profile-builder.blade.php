@@ -47,7 +47,15 @@
 .pb-input-wrap.is-bad,.pb-input-wrap.is-bad:focus-within{
     border-color:#FF3B3B;box-shadow:0 0 0 3px rgba(255,59,59,.20);}
 .pb-input{border:none;background:transparent;font-size:14px;font-weight:700;color:var(--dark);outline:none;width:100%;}
-.pb-input::placeholder{color:var(--muted);font-weight:400;}
+/* #C4B8AC, not var(--muted): this is .pyt-placeholder's colour from the trip
+   planner, and these fields are meant to read as the same control. */
+.pb-input::placeholder{color:#C4B8AC;font-weight:400;}
+
+/* The icon in a soft tile rather than floating loose beside the text — the
+   treatment the planner's From/To fields already use (.pyt-icon in
+   trip-planner-wizard.blade.php). Declared again here because that style block
+   is page-local and never reaches this component. */
+.pb-field-icon{width:32px;height:32px;border-radius:9px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .pb-suggest{font-size:12px;color:var(--muted);margin-top:8px;}
 .pb-suggest span{cursor:pointer;color:var(--primary);font-weight:600;text-decoration:underline;margin-left:4px;}
 .pb-btn{display:inline-flex;align-items:center;gap:8px;padding:13px 28px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;border:none;}
@@ -230,14 +238,13 @@
             <i class="fa-solid fa-location-dot" style="font-size:30px;color:#fff;"></i>
         </div>
         <h1 class="pb-title" style="font-size:32px;">Where does your journey begin?</h1>
-        <p class="pb-sub" style="font-size:16px;">We'll use your location to calculate flight durations, estimated costs, and suggest custom activities for your adventure.</p>
 
         <div class="pb-label" style="font-size:12px;">Address</div>
         <div style="position:relative;" x-on:click.away="open = false">
-            <div class="pb-input-wrap" :class="{ 'is-bad': $store.pbBad.home }" style="padding:18px 20px;cursor:pointer;" x-on:click="open = !open; $store.pbBad.home = false">
-                <i class="fa-solid fa-location-dot" style="color:var(--primary);font-size:16px;flex-shrink:0;"></i>
+            <div class="pb-input-wrap" :class="{ 'is-bad': $store.pbBad.home }" style="padding:16px 18px;gap:12px;cursor:pointer;" x-on:click="open = !open; $store.pbBad.home = false">
+                <div class="pb-field-icon"><i class="fa-solid fa-location-dot" style="color:var(--primary);font-size:14px;"></i></div>
                 <span x-text="query ? (code ? query + ' (' + code + ')' : query) : 'Where are you from?'"
-                      :style="query ? 'font-size:16px;font-weight:700;color:var(--dark);' : 'font-size:17px;font-weight:400;color:var(--muted);'"></span>
+                      :style="query ? 'font-size:16px;font-weight:700;color:var(--dark);' : 'font-size:16px;font-weight:400;color:#C4B8AC;'"></span>
                 {{-- query is the entangled Livewire property, so clearing it here
                      clears it server-side too — no second $wire.set to fall out
                      of step with, and no round trip whose reply can undo this. --}}
@@ -295,12 +302,14 @@
         <i class="fa-solid fa-wallet" style="font-size:30px;color:#fff;"></i>
     </div>
     <h1 class="pb-title" style="font-size:32px;">What is your preferred budget range?</h1>
-    <p class="pb-sub" style="font-size:16px;">Enter the budget that best fits your travel style.</p>
 
     <div class="pb-label" style="font-size:12px;">Budget Level</div>
-    <div class="pb-input-wrap" :class="{ 'is-bad': $store.pbBad.budget }" style="padding:20px 22px;" x-data="{ display: '{{ $dailyBudgetDisplay }}' }" x-init="$nextTick(() => { $el.querySelector('input').value = display; })">
-        <i class="fa-solid fa-wallet" style="color:var(--muted);font-size:18px;flex-shrink:0;"></i>
-        <input type="text" class="pb-input" style="font-size:19px;" placeholder="Please enter your desired budget"
+    {{-- Sized and coloured to match the Address field on step 1: same padding,
+         same 16px icon in the theme's primary rather than muted grey. The two
+         are the only single-field steps and sat a few pixels apart. --}}
+    <div class="pb-input-wrap" :class="{ 'is-bad': $store.pbBad.budget }" style="padding:16px 18px;gap:12px;" x-data="{ display: '{{ $dailyBudgetDisplay }}' }" x-init="$nextTick(() => { $el.querySelector('input').value = display; })">
+        <div class="pb-field-icon"><i class="fa-solid fa-wallet" style="color:var(--primary);font-size:14px;"></i></div>
+        <input type="text" class="pb-input" style="font-size:16px;" placeholder="Please enter your desired budget"
                x-ref="budgetInput"
                :value="display"
                @input="

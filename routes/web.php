@@ -83,9 +83,19 @@ Route::middleware(['auth', 'not-admin'])->group(function () {
     Route::post('/reviews/{review}/flag', [Traveler\ReviewController::class, 'flag'])->name('reviews.flag');
     Route::post('/reviews/{review}/helpful', [Traveler\ReviewController::class, 'markHelpful'])->name('reviews.helpful');
 
-    Route::get('/alerts',                [Traveler\AlertController::class, 'index'])->name('alerts.index');
-    Route::patch('/alerts/read-all',             [Traveler\AlertController::class, 'markAllRead'])->name('alerts.read-all');
-    Route::patch('/alerts/{notification}/read', [Traveler\AlertController::class, 'markRead'])->name('alerts.read');
+    // {notification} has to keep that exact name: AlertController::markRead()
+    // types its parameter Notification $notification, and implicit model
+    // binding matches the placeholder to the parameter by name.
+    Route::get('/notifications',                       [Traveler\AlertController::class, 'index'])->name('notifications.index');
+    Route::patch('/notifications/read-all',            [Traveler\AlertController::class, 'markAllRead'])->name('notifications.read-all');
+    Route::patch('/notifications/{notification}/read', [Traveler\AlertController::class, 'markRead'])->name('notifications.read');
+
+    // This page was /alerts until the URL was brought in line with the name the
+    // sidebar, the model and the table have always used. Kept because the
+    // sidebar is @persist'ed: a tab that was already open holds the old frozen
+    // href until a full reload, and would otherwise 404 on it. Only the GET
+    // needs this — the two PATCH forms re-render with the new action.
+    Route::redirect('/alerts', '/notifications');
 
     Route::get('/reports',               [Traveler\ReportController::class, 'index'])->name('reports.index');
     Route::get('/reports/download',      [Traveler\ReportController::class, 'download'])->name('reports.download');

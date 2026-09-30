@@ -3008,7 +3008,9 @@ class LlmTest extends TestCase
 
     public function test_accepting_saved_preferences_carries_the_local_currency_into_the_confirmation_message(): void
     {
-        $user = User::factory()->create(['currency_code' => 'USD', 'currency_symbol' => '$']);
+        // The stale USD account preference this used to set is gone with the
+        // columns that held it; the profile's own CAD is what this exercises.
+        $user = User::factory()->create();
         UserProfile::create([
             'user_id' => $user->id, 'home_city' => 'Vancouver',
             'daily_budget' => 20000, 'daily_budget_currency' => 'CAD', 'daily_budget_local' => 500,

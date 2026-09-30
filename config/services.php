@@ -68,6 +68,12 @@ return [
 
     'serpapi' => [
         'key' => env('SERPAPI_KEY', ''),
+
+        // Whether the nightly photo backfill is scheduled (routes/console.php).
+        // Off by default: a pass spends up to 20 requests from the same 80/day
+        // pool as live flight, hotel and restaurant lookups. Run the commands
+        // by hand when you want the photos, or set SERPAPI_IMAGE_BACKFILL=true.
+        'image_backfill' => env('SERPAPI_IMAGE_BACKFILL', false),
     ],
 
     'serper' => [

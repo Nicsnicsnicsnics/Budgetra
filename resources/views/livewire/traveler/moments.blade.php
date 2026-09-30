@@ -31,17 +31,12 @@
         background: #C8874A; transition: transform .15s ease, background .15s ease;
     }
     .timeline-entry:hover .moments-rail-marker { transform: scale(1.3); background: #934B19; }
-    .moments-float-chip {
-        position: absolute; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-        border-radius: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.14); max-width: calc(100% - 32px);
-    }
+    /* .moments-float-chip and .moments-float-hint moved to style.css: this
+       <style> block only renders in overview mode, and the per-trip map uses
+       them too. .moments-float-legend stays — only this mode has a legend. */
     .moments-float-legend {
         top: 16px; left: 16px; background: rgba(255,255,255,.82);
         padding: 10px 16px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-    }
-    .moments-float-hint {
-        bottom: 16px; left: 16px; background: rgba(28,20,15,.80); color: #fff;
-        padding: 10px 16px; font-size: 12px; display: flex; align-items: center; gap: 8px;
     }
     .moments-segmented {
         display: inline-flex; background: var(--bg, #F8F5F2); border: 1px solid var(--border, #E5E7EB);
@@ -78,14 +73,13 @@
                 wire:key="moments-overview-map"
                 wire:ignore
                 x-data
-                x-init="initOverviewMap($el, $wire, {{ json_encode($this->overviewPins) }}, {{ json_encode($this->allMomentPins) }})"
+                x-init="initOverviewMap($el, $wire, {{ json_encode($this->overviewPins) }})"
             ></div>
 
             <div class="moments-float-chip moments-float-legend">
                 <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#1A1A2E;font-weight:600;"><span style="width:8px;height:8px;border-radius:50%;background:#22C55E;display:inline-block;"></span> Ongoing</span>
                 <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#1A1A2E;font-weight:600;"><span style="width:8px;height:8px;border-radius:50%;background:#3B82F6;display:inline-block;"></span> Upcoming</span>
                 <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#1A1A2E;font-weight:600;"><span style="width:8px;height:8px;border-radius:50%;background:#6B7280;display:inline-block;"></span> Completed</span>
-                <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#1A1A2E;font-weight:600;"><i class="fa-solid fa-camera" style="font-size:9px;color:var(--primary);"></i> Memory</span>
             </div>
 
             <div class="moments-float-chip moments-float-hint">
@@ -97,13 +91,6 @@
                 @endif
             </div>
 
-            @if ($momentBlockedMessage)
-            <div class="moments-float-chip" wire:key="moment-blocked-overview"
-                 style="top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(185,28,28,.92);color:#fff;padding:10px 16px;font-size:12px;display:flex;align-items:center;gap:8px;text-align:center;"
-                 x-data x-init="setTimeout(() => $wire.set('momentBlockedMessage', ''), 3500)">
-                <i class="fa-solid fa-triangle-exclamation"></i> {{ $momentBlockedMessage }}
-            </div>
-            @endif
         </div>
     </div>
 
@@ -118,7 +105,7 @@
                 </div>
                 <div style="font-size:16px;font-weight:700;color:var(--dark);margin-bottom:8px;">Your travel diary starts here</div>
                 <div style="font-size:13px;color:var(--muted);max-width:320px;line-height:1.6;margin-bottom:18px;">
-                    Switch to Map View and click anywhere to post your first Moment — it'll show up here as a timeline entry.
+                    Switch to Map View and click on any "Ongoing Trip" to add your first Moment and it'll show up here as a timeline entry.
                 </div>
                 <button type="button" @click="$store.overviewMoments.view = 'map'" class="moments-btn-primary"
                         style="background:var(--primary);color:#fff;border:none;border-radius:10px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;">
@@ -260,28 +247,29 @@
          via Alpine instead of always rendered. --}}
     <div x-show="$store.moments.view === 'map'" x-transition.opacity.duration.200ms>
         <div style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:16px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,.04);">
-            <p style="margin:0 0 12px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;">
-                <i class="fa-solid fa-circle-info" style="color:#C8874A;"></i>
-                @if ($this->selectedTrip && $this->selectedTrip->resolved_status === 'active')
-                    Click anywhere on the map to drop a pin for a place you visited.
-                @else
-                    Moments can only be added once this trip is ongoing.
-                @endif
-            </p>
+            {{-- The hint sits on the map rather than above it, the same way the
+                 all-trips overview map carries its own. Above the map it read
+                 as page furniture and was missed; over the map's lower-left
+                 corner it is attached to the thing it is talking about, and
+                 the two maps now behave alike. --}}
+            <div class="moments-trip-map-shell">
+                <div
+                    wire:key="moments-map-{{ $selectedTripId }}"
+                    wire:ignore
+                    x-data
+                    x-init="initMomentsMap($el, $wire, {{ $mc['lat'] }}, {{ $mc['lng'] }}, {{ $mc['zoom'] }}, {{ json_encode($tripLabel($trip) . ' · ' . $tripStart->format('M j') . '–' . $tripEnd->format('M j, Y')) }}, {{ json_encode($this->initialPins) }})"
+                    style="width:100%;height:440px;border-radius:12px;overflow:hidden;"
+                ></div>
 
-            @if ($momentBlockedMessage)
-            <div class="alert alert-danger" wire:key="moment-blocked-trip" style="margin-bottom:12px;text-align:center;"
-                 x-data x-init="setTimeout(() => $wire.set('momentBlockedMessage', ''), 3500)">
-                <i class="fa-solid fa-triangle-exclamation"></i> {{ $momentBlockedMessage }}
+                <div class="moments-float-chip moments-float-hint">
+                    <i class="fa-solid fa-circle-info" style="color:#F5C97A;"></i>
+                    @if ($this->selectedTrip && $this->selectedTrip->resolved_status === 'active')
+                        Click anywhere on the map to drop a pin for a place you visited.
+                    @else
+                        This trip isn't ongoing yet — moments can be added once it starts
+                    @endif
+                </div>
             </div>
-            @endif
-            <div
-                wire:key="moments-map-{{ $selectedTripId }}"
-                wire:ignore
-                x-data
-                x-init="initMomentsMap($el, $wire, {{ $mc['lat'] }}, {{ $mc['lng'] }}, {{ $mc['zoom'] }}, {{ json_encode($tripLabel($trip) . ' · ' . $tripStart->format('M j') . '–' . $tripEnd->format('M j, Y')) }}, {{ json_encode($this->initialPins) }})"
-                style="width:100%;height:440px;border-radius:12px;overflow:hidden;"
-            ></div>
         </div>
     </div>
 
@@ -831,7 +819,11 @@
     // across every trip. Separate MapLibre instance from initMomentsMap
     // above (mutually exclusive: only one of the two map divs exists in the
     // DOM at a time, switched via wire:key when momentsMode changes).
-    window.initOverviewMap = function (el, wire, pins, allMoments) {
+    // Trip pins only. The memory markers this used to draw were removed along
+    // with their legend entry: moments still live on the per-trip map and in
+    // Timeline View, but the all-trips map now answers one question — where
+    // the trips are — instead of two.
+    window.initOverviewMap = function (el, wire, pins) {
         if (typeof L === 'undefined' || !el) return;
 
         if (window.__momentsOverviewMapUnsub) {
@@ -864,108 +856,6 @@
             });
         }
 
-        // Memory markers: a small round pin showing the first photo (or a
-        // camera icon if none), clickable to view/edit/delete that Moment.
-        function buildMemoryMarkerIcon(pin) {
-            var hasPhoto = pin.photo_urls && pin.photo_urls.length > 0;
-            var inner = hasPhoto
-                ? ''
-                : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;"><i class="fa-solid fa-camera" style="font-size:12px;color:var(--primary);"></i></div>';
-            var bg = hasPhoto ? "background-image:url('" + pin.photo_urls[0] + "');" : '';
-            return L.divIcon({
-                className: '',
-                html: '<div style="width:30px;height:30px;border-radius:50%;border:3px solid var(--primary);box-shadow:0 2px 6px rgba(0,0,0,.35);cursor:pointer;background-color:#FDF3EB;background-size:cover;background-position:center;' + bg + '">' + inner + '</div>',
-                iconSize: [30, 30],
-                iconAnchor: [15, 15],
-            });
-        }
-
-        function buildMemoryPopup(pin) {
-            var wrap = document.createElement('div');
-            wrap.style.cssText = 'min-width:190px;font-family:\'Hanken Grotesk\',sans-serif;';
-
-            if (pin.photo_urls && pin.photo_urls.length) {
-                var gallery = document.createElement('div');
-                gallery.style.cssText = 'display:flex;gap:5px;overflow-x:auto;max-width:220px;margin-bottom:10px;';
-                pin.photo_urls.forEach(function (url) {
-                    var img = document.createElement('img');
-                    img.src = url;
-                    img.style.cssText = 'width:72px;height:72px;object-fit:cover;border-radius:10px;flex-shrink:0;cursor:pointer;';
-                    img.title = 'Open full size';
-                    img.addEventListener('click', function () { window.open(url, '_blank'); });
-                    gallery.appendChild(img);
-                });
-                wrap.appendChild(gallery);
-            } else {
-                var noPhoto = document.createElement('div');
-                noPhoto.style.cssText = 'width:72px;height:72px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;margin-bottom:10px;';
-                noPhoto.innerHTML = '<i class="fa-solid fa-camera" style="font-size:18px;color:var(--primary);"></i>';
-                wrap.appendChild(noPhoto);
-            }
-
-            var title = document.createElement('div');
-            title.textContent = pin.place_name;
-            title.style.cssText = 'font-size:14px;font-weight:800;color:var(--dark);margin-bottom:3px;';
-            wrap.appendChild(title);
-
-            var date = document.createElement('div');
-            date.innerHTML = '<i class="fa-regular fa-calendar" style="font-size:10px;margin-right:4px;"></i>' + pin.visited_date;
-            date.style.cssText = 'font-size:11px;color:var(--muted);margin-bottom:6px;';
-            wrap.appendChild(date);
-
-            if (pin.description) {
-                var desc = document.createElement('div');
-                desc.textContent = pin.description;
-                desc.style.cssText = 'font-size:12px;color:var(--dark);opacity:.85;margin:0 0 10px;line-height:1.5;';
-                wrap.appendChild(desc);
-            }
-
-            var actions = document.createElement('div');
-            actions.style.cssText = 'display:flex;gap:6px;margin-top:6px;';
-
-            var editBtn = document.createElement('button');
-            editBtn.type = 'button';
-            editBtn.textContent = 'Edit';
-            editBtn.style.cssText = 'flex:1;background:var(--primary-light);color:var(--primary);border:none;border-radius:8px;padding:7px 0;font-size:11px;font-weight:700;cursor:pointer;transition:filter .15s;';
-            editBtn.onmouseenter = function () { this.style.filter = 'brightness(0.95)'; };
-            editBtn.onmouseleave = function () { this.style.filter = 'none'; };
-            editBtn.addEventListener('click', function () { wire.call('openEditPinModalFromOverview', pin.id); });
-
-            var delBtn = document.createElement('button');
-            delBtn.type = 'button';
-            delBtn.textContent = 'Delete';
-            delBtn.style.cssText = 'flex:1;background:#FEF2F2;color:#DC2626;border:none;border-radius:8px;padding:7px 0;font-size:11px;font-weight:700;cursor:pointer;transition:filter .15s;';
-            delBtn.onmouseenter = function () { this.style.filter = 'brightness(0.95)'; };
-            delBtn.onmouseleave = function () { this.style.filter = 'none'; };
-            delBtn.addEventListener('click', function () { wire.call('confirmDeletePinFromOverview', pin.id); });
-
-            actions.appendChild(editBtn);
-            actions.appendChild(delBtn);
-            wrap.appendChild(actions);
-            return wrap;
-        }
-
-        var memoryMarkersById = {};
-        var momentsById = {};
-        function renderMemory(pin) {
-            momentsById[pin.id] = pin;
-            var marker = memoryMarkersById[pin.id];
-            if (marker) {
-                marker.setLatLng([pin.lat, pin.lng]).bindPopup(buildMemoryPopup(pin));
-            } else {
-                marker = L.marker([pin.lat, pin.lng], { icon: buildMemoryMarkerIcon(pin) })
-                    .addTo(map)
-                    .bindPopup(buildMemoryPopup(pin));
-                memoryMarkersById[pin.id] = marker;
-            }
-        }
-
-        function removeMemory(pinId) {
-            var marker = memoryMarkersById[pinId];
-            if (marker) { map.removeLayer(marker); delete memoryMarkersById[pinId]; }
-            delete momentsById[pinId];
-        }
-
         var bounds = L.latLngBounds([]);
         var seenCoords = [];
         function trackCoord(lat, lng) {
@@ -977,11 +867,6 @@
 
         (pins || []).forEach(function (pin) {
             L.marker([pin.lat, pin.lng], { icon: buildTripMarkerIcon(pin) }).addTo(map);
-            bounds.extend([pin.lat, pin.lng]);
-            trackCoord(pin.lat, pin.lng);
-        });
-        (allMoments || []).forEach(function (pin) {
-            renderMemory(pin);
             bounds.extend([pin.lat, pin.lng]);
             trackCoord(pin.lat, pin.lng);
         });
@@ -1005,11 +890,6 @@
         map.on('click', function (e) {
             wire.call('openAddPinModalFromOverview', e.latlng.lat, e.latlng.lng);
         });
-
-        window.__momentsOverviewMapUnsub.push(
-            Livewire.on('pin-saved', function (payload) { renderMemory(payload.pin); }),
-            Livewire.on('pin-deleted', function (payload) { removeMemory(payload.id); })
-        );
 
         // A one-shot timeout can't know how long the surrounding layout
         // (sidebar collapse/expand, tab switch transitions, wire:navigate)

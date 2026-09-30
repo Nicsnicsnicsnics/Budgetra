@@ -27,7 +27,7 @@
 @php $sgNeedsProfile = ! auth()->user()?->userProfile; @endphp
 <div class="empty-state-center" style="min-height:80vh;">
     <div style="width:64px;height:64px;border-radius:18px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
-        <i class="fa-solid fa-piggy-bank" style="font-size:28px;color:#fff;"></i>
+        <x-nav-icon icon="saving-goals" style="font-size:28px;color:#fff;" />
     </div>
     @if ($sgNeedsProfile)
     <div class="empty-state-swap" data-empty-when="profile">
@@ -44,7 +44,7 @@
     </div>
     @endif
     <div class="empty-state-swap" @if ($sgNeedsProfile) data-empty-when="skipped" @endif>
-        <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">No savings goals yet</h2>
+        <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">No saving goals yet</h2>
         <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Plan a trip first before adding your savings goals for your destinations.</p>
         <a href="{{ route('trips.plan') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;transition:background .18s;"
            onmouseenter="this.style.background='var(--primary-dark)'" onmouseleave="this.style.background='var(--primary)'">
@@ -117,7 +117,7 @@
     </div>
 
     {{-- Tab panels --}}
-    <div style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:0 16px 16px 16px;padding:24px;display:flex;flex-direction:column;position:relative;">
+    <div class="tab-panel">
         @foreach ($sgGroups as $sgGroup)
         <div x-show="tab === '{{ $sgGroup['key'] }}'" x-cloak style="display:flex;flex-direction:column;">
             @if ($sgGroup['items']->isEmpty())

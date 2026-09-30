@@ -60,7 +60,7 @@ $originCountryLabel = \App\Support\PlaceCatalog::originCountryFor(auth()->user()
 
     {{-- Card --}}
     {{-- wire:key forces Livewire to treat this as a fresh element every time
-         step becomes 1 again (e.g. via "Back to Planner"), instead of
+         step becomes 1 again (e.g. via "Back to Trip Details"), instead of
          possibly morph-reusing a stale DOM node and skipping Alpine's
          x-init — which is what actually re-seeds fromLabel/toLabel/dates/
          budget from the still-intact server-side values. --}}
@@ -929,12 +929,15 @@ $originCountryLabel2 = \App\Support\PlaceCatalog::originCountryFor(auth()->user(
 
         {{-- Search Flights button --}}
         <div style="display:flex;justify-content:flex-end;padding:14px 20px;">
-            <button wire:click="searchManualFlights" wire:loading.attr="disabled" wire:target="searchManualFlights"
+            <button class="wiz-search-btn" wire:click="searchManualFlights" wire:loading.attr="disabled"
+                    wire:loading.class="is-searching" wire:target="searchManualFlights"
                     style="background:var(--primary);color:#fff;border:none;border-radius:12px;padding:11px 26px;font-size:13px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:background .18s;"
                     onmouseenter="this.style.background='var(--primary-dark)'"
                     onmouseleave="this.style.background='var(--primary)'">
-                <span wire:loading.remove wire:target="searchManualFlights"><i class="fa-solid fa-magnifying-glass"></i> Search Flights</span>
-                <span wire:loading wire:target="searchManualFlights"><i class="fa-solid fa-spinner fa-spin"></i> Searching</span>
+                <span><i class="fa-solid fa-magnifying-glass"></i> Search Flights</span>
+                {{-- aria-label because the spinner is the only thing left:
+                     "Searching" is read out, not printed. --}}
+                <span class="wiz-search-spinner" aria-label="Searching"><i class="fa-solid fa-spinner fa-spin"></i></span>
             </button>
         </div>
     </div>
@@ -1584,12 +1587,15 @@ window.sortVenues = function(dir) {
 
         {{-- Search Stays button --}}
         <div style="display:flex;justify-content:flex-end;padding:14px 20px;">
-            <button wire:click="searchAccommodations" wire:loading.attr="disabled" wire:target="searchAccommodations"
+            <button class="wiz-search-btn" wire:click="searchAccommodations" wire:loading.attr="disabled"
+                    wire:loading.class="is-searching" wire:target="searchAccommodations"
                     style="background:var(--primary);color:#fff;border:none;border-radius:12px;padding:11px 26px;font-size:13px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:background .18s;"
                     onmouseenter="this.style.background='var(--primary-dark)'"
                     onmouseleave="this.style.background='var(--primary)'">
-                <span wire:loading.remove wire:target="searchAccommodations"><i class="fa-solid fa-magnifying-glass"></i> Search Accommodations</span>
-                <span wire:loading wire:target="searchAccommodations"><i class="fa-solid fa-spinner fa-spin"></i> Searching</span>
+                <span><i class="fa-solid fa-magnifying-glass"></i> Search Accommodations</span>
+                {{-- aria-label because the spinner is the only thing left:
+                     "Searching" is read out, not printed. --}}
+                <span class="wiz-search-spinner" aria-label="Searching"><i class="fa-solid fa-spinner fa-spin"></i></span>
             </button>
         </div>
     </div>
@@ -1837,11 +1843,14 @@ window.sortVenues = function(dir) {
             </div>
         </div>
         <div style="display:flex;justify-content:flex-end;padding:14px 20px;">
-            <button wire:click="searchVenues" wire:loading.attr="disabled" wire:target="searchVenues"
+            <button class="wiz-search-btn" wire:click="searchVenues" wire:loading.attr="disabled"
+                    wire:loading.class="is-searching" wire:target="searchVenues"
                     style="background:var(--primary);color:#fff;border:none;border-radius:10px;padding:11px 24px;font-size:13px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:8px;"
                     onmouseenter="this.style.background='var(--primary-dark)'" onmouseleave="this.style.background='var(--primary)'">
-                <span wire:loading.remove wire:target="searchVenues"><i class="fa-solid fa-magnifying-glass" style="font-size:12px;"></i> Search Food & Dining</span>
-                <span wire:loading wire:target="searchVenues"><i class="fa-solid fa-spinner fa-spin"></i> Searching</span>
+                <span><i class="fa-solid fa-magnifying-glass" style="font-size:12px;"></i> Search Food & Dining</span>
+                {{-- aria-label because the spinner is the only thing left:
+                     "Searching" is read out, not printed. --}}
+                <span class="wiz-search-spinner" aria-label="Searching"><i class="fa-solid fa-spinner fa-spin"></i></span>
             </button>
         </div>
     </div>
@@ -2075,7 +2084,7 @@ window.sortVenues = function(dir) {
         <div>
             <button wire:click="backFromEdit(4)"
                     style="display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--primary);font-size:13px;font-weight:600;cursor:pointer;padding:0;margin-bottom:10px;">
-                <i class="fa-solid fa-arrow-left" style="font-size:11px;"></i> Back to Planner
+                <i class="fa-solid fa-arrow-left" style="font-size:11px;"></i> Back to Food &amp; Dining
             </button>
             <h1 style="font-size:26px;font-weight:800;color:var(--dark);margin:0 0 6px;">Select Attractions</h1>
             @php $attrDest = $mcAttractionStep ? $mcTo : ($manualTo ?: $mcTo); @endphp
@@ -2144,11 +2153,14 @@ window.sortVenues = function(dir) {
             </div>
         </div>
         <div style="display:flex;justify-content:flex-end;padding:14px 20px;">
-            <button wire:click="searchAttractionsList" wire:loading.attr="disabled" wire:target="searchAttractionsList"
+            <button class="wiz-search-btn" wire:click="searchAttractionsList" wire:loading.attr="disabled"
+                    wire:loading.class="is-searching" wire:target="searchAttractionsList"
                     style="background:var(--primary);color:#fff;border:none;border-radius:10px;padding:11px 24px;font-size:13px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:8px;"
                     onmouseenter="this.style.background='var(--primary-dark)'" onmouseleave="this.style.background='var(--primary)'">
-                <span wire:loading.remove wire:target="searchAttractionsList"><i class="fa-solid fa-magnifying-glass" style="font-size:12px;"></i> Search Attractions</span>
-                <span wire:loading wire:target="searchAttractionsList"><i class="fa-solid fa-spinner fa-spin"></i> Searching</span>
+                <span><i class="fa-solid fa-magnifying-glass" style="font-size:12px;"></i> Search Attractions</span>
+                {{-- aria-label because the spinner is the only thing left:
+                     "Searching" is read out, not printed. --}}
+                <span class="wiz-search-spinner" aria-label="Searching"><i class="fa-solid fa-spinner fa-spin"></i></span>
             </button>
         </div>
     </div>
@@ -2334,7 +2346,23 @@ window.sortAttractions = function(dir) {
 .ef-clear:hover{background:var(--border-light);color:var(--dark);}
 .ef-clear:focus-visible{outline:2px solid var(--primary);outline-offset:2px;}
 </style>
-<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:calc(100vh - 120px);padding:40px 24px;text-align:center;">
+{{-- The back link is a sibling of the centred block, not a child of it:
+     inside, justify-content:center dragged it down the page with the card,
+     so it sat halfway down a tall screen. Out here it pins to the top-left
+     corner the way every uncentred step's does.
+
+     The 40px it occupies (20px padding + the line) comes off the block's
+     min-height below, so the two still add up to the 100vh - 120px this
+     step has always been and the page gains no scrollbar. --}}
+<div style="padding:20px 24px 0;">
+    {{-- The one step that had no way back. backFromEdit() handles the AI-edit
+         case by returning to the AI planner instead of step 5. --}}
+    <button wire:click="backFromEdit(5)" style="display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--primary);font-size:13px;font-weight:600;cursor:pointer;padding:0;">
+        <i class="fa-solid fa-arrow-left" style="font-size:11px;"></i> Back to Select Attractions
+    </button>
+</div>
+
+<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:calc(100vh - 160px);padding:20px 24px 40px;text-align:center;">
 
     <h1 style="font-size:38px;font-weight:800;color:var(--dark);margin:0 0 14px;">Emergency Fund</h1>
     <p style="font-size:16px;color:var(--muted);margin:0 0 40px;max-width:560px;line-height:1.6;">Set aside a safety net for unexpected expenses during your journey.</p>
@@ -2496,40 +2524,35 @@ window.sortAttractions = function(dir) {
         $budMinRaw = (int) preg_replace('/[^\d]/', '', $manualBudgetMin);
     }
 
-    // The stored figures above are always pesos — this only changes how
-    // they're SHOWN, converting back into the currency the trip started
-    // in (tripCurrency, carried over from TARA's handoff) so the traveler
-    // sees the same numbers they actually typed, not an unlabeled peso
-    // figure that looks disconnected from the rest of the trip.
-    $budSymbol = '₱';
-    $budDivisor = 1;
-    if ($tripCurrency !== '' && $tripCurrency !== 'PHP') {
-        $liveRate = (new \App\Services\CurrencyConverterService())->rateToPhp($tripCurrency);
-        if ($liveRate !== null) {
-            // Never '₱' here — $budDivisor below turns the figure into
-            // $tripCurrency, so a peso sign would mislabel it.
-            $budSymbol  = \App\Support\PlaceCatalog::CURRENCY_SYMBOLS[$tripCurrency] ?? $tripCurrency . ' ';
-            $budDivisor = $liveRate;
-        }
-    }
-
-    // The emergency fund is set aside SEPARATELY from the trip budget
-    // (added on top of it), not carved out of it — so the top end of this
-    // range is the trip budget PLUS the emergency fund.
-    $budMin = $budSymbol . ($budMinRaw ? number_format($budMinRaw / $budDivisor) : '0');
-    $budMax = $budSymbol . ($budMaxRaw ? number_format(($budMaxRaw + $emergency) / $budDivisor) : '0');
+    // The stored figures above are always pesos; this only changes how they
+    // are SHOWN. It used to convert on tripCurrency alone, which is only set
+    // when a trip is handed over from TARA — so a manually planned trip fell
+    // through to a peso sign no matter what country the traveller registered
+    // with. budgetDisplayAmount() asks budgetCurrency(), which is the trip's
+    // currency when there is one and the traveller's own otherwise, the same
+    // answer the budget field on step 1 is labelled with.
+    //
+    // The emergency fund is set aside SEPARATELY from the trip budget (added
+    // on top of it), not carved out of it — so the top end of this range is
+    // the trip budget PLUS the emergency fund.
+    $budMin = $this->budgetDisplayAmount($budMinRaw);
+    $budMax = $this->budgetDisplayAmount($budMaxRaw ? $budMaxRaw + $emergency : 0);
 @endphp
-<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:calc(100vh - 120px);padding:40px 24px;">
+{{-- The back link is a sibling of the centred block, not a child of it:
+     inside, justify-content:center dragged it down the page with the card,
+     so it sat halfway down a tall screen. Out here it pins to the top-left
+     corner the way every uncentred step's does.
 
-    {{-- Same back affordance every other step carries, aligned to the card's
-         own left edge (the step is centred, so it needs the matching
-         max-width rather than sitting flush with the page). --}}
-    <div style="width:100%;max-width:480px;">
-        <button wire:click="backFromEdit(6)"
-                style="display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--primary);font-size:13px;font-weight:600;cursor:pointer;padding:0;margin-bottom:10px;">
-            <i class="fa-solid fa-arrow-left" style="font-size:11px;"></i> Back to Emergency Fund
-        </button>
-    </div>
+     The 40px it occupies (20px padding + the line) comes off the block's
+     min-height below, so the two still add up to the 100vh - 120px this
+     step has always been and the page gains no scrollbar. --}}
+<div style="padding:20px 24px 0;">
+    <button wire:click="backFromEdit(6)" style="display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--primary);font-size:13px;font-weight:600;cursor:pointer;padding:0;">
+        <i class="fa-solid fa-arrow-left" style="font-size:11px;"></i> Back to Emergency Fund
+    </button>
+</div>
+
+<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:calc(100vh - 160px);padding:20px 24px 40px;">
 
     <div style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:22px;padding:32px 28px;width:100%;max-width:480px;box-shadow:0 8px 36px rgba(45,27,20,.08);">
 
@@ -2853,29 +2876,64 @@ window.sortAttractions = function(dir) {
 .itin8-btn-save:hover{background:var(--primary-dark);}
 .itin8-desc{font-size:14px;font-weight:400;color:var(--muted);line-height:20px;margin:0;}
 
-/* Day sections — stacked vertically, one below another */
-.itin8-days{display:flex;flex-direction:column;gap:18px;padding-bottom:20px;}
-.itin8-day-col{display:flex;flex-direction:column;background:var(--bg-white);border:1px solid var(--border);border-radius:18px;padding:20px 22px 22px;box-shadow:0 4px 16px rgba(45,27,20,0.06);}
-.itin8-day-header{display:flex;align-items:center;gap:12px;padding:0 0 14px;border-bottom:1px solid var(--bg);margin-bottom:18px;}
-.itin8-day-num{width:40px;height:40px;border-radius:9999px;background:var(--primary);color:#ffffff;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex-shrink:0;font-family:'Hanken Grotesk',sans-serif;}
-.itin8-day-label{font-size:15px;font-weight:700;color:var(--dark);line-height:20px;}
-.itin8-day-date{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:1px;}
+/* Day sections — a board of day columns, not one full-width card per day.
+   A five-day trip was five tall rows, and the cost card and Save Itinerary
+   button at the top scrolled out of reach before you got to day two.
+
+   The column count follows the TRIP, not the window: --day-cols is written
+   inline from count($optDays) where the board is rendered, so a four-day
+   trip is always one row of four and the same trip looks the same on every
+   screen. An auto-fill track reflowed on every resize instead. Capped at 5
+   there, so a fortnight wraps rather than shaving each column to a sliver.
+
+   var() inside repeat() is fine: custom properties are substituted before
+   the grid value is parsed, so this resolves to repeat(4, ...) first.
+
+   minmax(0,1fr) rather than 1fr because a 1fr track still refuses to go
+   below its content's min-content width — that is what would push the row
+   wider than the page and bring back the sideways scrollbar. */
+.itin8-days{display:grid;grid-template-columns:repeat(var(--day-cols,3),minmax(0,1fr));align-items:start;gap:14px;padding-bottom:20px;}
+/* Five 268px columns are fine on a laptop and unreadable on a phone, so the
+   breakpoints step the count down. Each ceiling is also capped against the
+   trip's own length inline, so a two-day trip never opens a third empty
+   column here. */
+@media (max-width:1100px){.itin8-days{grid-template-columns:repeat(var(--day-cols-md,3),minmax(0,1fr));}}
+@media (max-width:820px){.itin8-days{grid-template-columns:repeat(var(--day-cols-sm,2),minmax(0,1fr));}}
+@media (max-width:560px){.itin8-days{grid-template-columns:1fr;}}
+/* align-items above is the BLOCK axis in grid, so a day with one activity is
+   not stretched to match a day with five beside it. Columns still fill their
+   track horizontally, since justify-items is left at stretch.
+
+   min-width:0 because a grid item defaults to min-width:auto, which refuses
+   to shrink below its min-content width and pushes the track wider than its
+   share — one long activity title would bring the sideways scroll back. */
+.itin8-day-col{display:flex;flex-direction:column;min-width:0;background:var(--bg-white);border:1px solid var(--border);border-radius:16px;padding:14px 14px 16px;box-shadow:0 4px 16px rgba(45,27,20,0.06);}
+.itin8-day-header{display:flex;align-items:center;gap:10px;padding:0 0 10px;border-bottom:1px solid var(--bg);margin-bottom:12px;}
+/* Lets the date/label block wrap instead of holding the column open at
+   its longest word once four or five of them share the width. */
+.itin8-day-header > div:first-child{min-width:0;}
+.itin8-day-num{width:28px;height:28px;border-radius:9999px;background:var(--primary);color:#ffffff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;font-family:'Hanken Grotesk',sans-serif;}
+.itin8-day-label{font-size:13.5px;font-weight:700;color:var(--dark);line-height:17px;}
+.itin8-day-date{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:1px;}
 
 /* Vertical timeline of activities within a day */
-.itin8-timeline{position:relative;padding-left:26px;}
-.itin8-timeline::before{content:'';position:absolute;left:15px;top:8px;bottom:8px;width:2px;background:#EDE0D6;}
-.itin8-act-card{position:relative;background:var(--bg-white);border-radius:12px;border:1px solid #efe6dd;padding:14px 16px;font-family:'Hanken Grotesk',sans-serif;margin-bottom:14px;}
+.itin8-timeline{position:relative;padding-left:22px;}
+/* left is tied to the icon geometry below: the icon spans 0..26px from
+   the column edge, so its centre is 13px, and this 2px rail has to sit
+   at 12px to run through it. Change one, change both. */
+.itin8-timeline::before{content:'';position:absolute;left:12px;top:6px;bottom:6px;width:2px;background:#EDE0D6;}
+.itin8-act-card{position:relative;background:var(--bg-white);border-radius:10px;border:1px solid #efe6dd;padding:10px 12px;font-family:'Hanken Grotesk',sans-serif;margin-bottom:10px;}
 .itin8-act-card:last-child{margin-bottom:0;}
-.itin8-act-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
-.itin8-act-icon{position:absolute;left:-26px;top:14px;width:32px;height:32px;border-radius:9999px;border:2px solid #fff;background:var(--bg-white);box-shadow:0 0 0 2px var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-.itin8-act-icon .material-symbols-outlined{font-size:16px;}
-.itin8-act-time{font-size:11px;font-weight:600;color:var(--muted);line-height:16px;}
-.itin8-act-body{margin-bottom:8px;}
-.itin8-act-title{font-size:14px;font-weight:700;color:var(--dark);line-height:19px;margin-bottom:3px;}
-.itin8-act-sub{font-size:12px;font-weight:400;color:var(--muted);line-height:17px;font-style:italic;}
-.itin8-act-footer{border-top:1px solid #ece2d8;padding-top:8px;display:flex;align-items:center;justify-content:space-between;}
-.itin8-act-cost-label{font-size:11px;color:var(--muted);font-weight:500;}
-.itin8-act-cost-val{font-size:13px;font-weight:700;color:var(--primary);}
+.itin8-act-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;}
+.itin8-act-icon{position:absolute;left:-22px;top:10px;width:26px;height:26px;border-radius:9999px;border:2px solid #fff;background:var(--bg-white);box-shadow:0 0 0 2px var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.itin8-act-icon .material-symbols-outlined{font-size:14px;}
+.itin8-act-time{font-size:10.5px;font-weight:600;color:var(--muted);line-height:14px;}
+.itin8-act-body{margin-bottom:6px;}
+.itin8-act-title{font-size:13px;font-weight:700;color:var(--dark);line-height:17px;margin-bottom:2px;}
+.itin8-act-sub{font-size:11.5px;font-weight:400;color:var(--muted);line-height:15px;font-style:italic;}
+.itin8-act-footer{border-top:1px solid #ece2d8;padding-top:6px;display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.itin8-act-cost-label{font-size:10.5px;color:var(--muted);font-weight:500;}
+.itin8-act-cost-val{font-size:12px;font-weight:700;color:var(--primary);white-space:nowrap;}
 .itin8-loading{display:flex;align-items:center;gap:10px;padding:32px 0;color:var(--muted);font-size:14px;}
 .material-symbols-outlined{font-family:'Material Symbols Outlined';font-weight:normal;font-style:normal;font-size:20px;line-height:1;letter-spacing:normal;text-transform:none;display:inline-block;white-space:nowrap;direction:ltr;-webkit-font-smoothing:antialiased;font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24;}
 </style>
@@ -3121,7 +3179,14 @@ window.sortAttractions = function(dir) {
         $optDays        = $buildAllDays($selectedOption);
     @endphp
 
-    <div class="itin8-days">
+    @php
+        // The board's width in columns, decided by the trip rather than by
+        // the viewport. Capped at 5: beyond that the columns get too narrow
+        // to read, so a longer trip wraps onto a second row instead.
+        $dayCols = max(1, min(5, count($optDays)));
+    @endphp
+    <div class="itin8-days"
+         style="--day-cols:{{ $dayCols }};--day-cols-md:{{ min(3, $dayCols) }};--day-cols-sm:{{ min(2, $dayCols) }};">
         @foreach($optDays as $dayItem)
         @php
             $dayNum  = $dayItem['day'] ?? ($loop->iteration);
@@ -3367,7 +3432,11 @@ window.sortAttractions = function(dir) {
     $s9leg2Days  = ($mcStartDate && $mcEndDate) ? max(1,(int)round((strtotime($mcEndDate)-strtotime($mcStartDate))/86400)) : 1;
 @endphp
 
-<div style="max-width:1200px;margin:0 auto;padding:20px 0;">
+{{-- Full width, like step 8's .itin8-wrap next door. The 1200px + auto
+     margins this used to carry centred the whole step once the content area
+     grew past 1200px, which pushed the back link inwards on a wide monitor
+     while the itinerary step's stayed pinned to the left. --}}
+<div style="padding:20px 0;">
 
     {{-- Header --}}
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
@@ -3658,7 +3727,7 @@ window.sortAttractions = function(dir) {
 <div class="empty-state-swap" data-empty-when="profile">
 <div class="empty-state-center" style="width:100%;min-height:calc(100vh - 120px);">
     <div style="width:64px;height:64px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
-        <i class="fa-solid fa-map-location-dot" style="font-size:28px;color:#fff;"></i>
+        <x-nav-icon icon="trip-planner" style="font-size:28px;color:#fff;" />
     </div>
     <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">Set up your profile first</h2>
     <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Complete your travel profile before planning your trip and view estimations for your trips.</p>
@@ -3691,8 +3760,6 @@ window.sortAttractions = function(dir) {
 .mode-card .mode-img-wrap img{width:100%;height:100%;object-fit:cover;transition:transform .5s ease;display:block;}
 .mode-card:hover .mode-img-wrap img{transform:scale(1.06);}
 .mode-card .mode-img-fade{position:absolute;inset:0;background:linear-gradient(to top,rgba(20,10,4,0.55) 0%,rgba(20,10,4,0) 45%);}
-.mode-tags{position:absolute;bottom:16px;left:20px;right:20px;display:flex;flex-wrap:wrap;gap:6px;}
-.mode-tag{font-size:11px;font-weight:600;color:#fff;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);backdrop-filter:blur(3px);border-radius:20px;padding:4px 11px;}
 .mode-cta{font-size:13px;font-weight:800;letter-spacing:0.4px;color:#fff;display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--primary);border-radius:12px;padding:13px 22px;width:100%;box-sizing:border-box;transition:background .2s,gap .2s;}
 .mode-card:hover .mode-cta{background:var(--primary-dark);gap:11px;}
 /* padding + clip so a field's focus ring can never spill out and nudge the page
@@ -3722,12 +3789,6 @@ window.sortAttractions = function(dir) {
             <div class="mode-img-wrap">
                 <img src="{{ asset('stockimages/manualtrip.jpg') }}?v={{ filemtime(public_path('stockimages/manualtrip.jpg')) }}" alt="Manual Planning">
                 <div class="mode-img-fade"></div>
-                <div class="mode-tags">
-                    <span class="mode-tag"><i class="fa-solid fa-plane" style="font-size:9px;margin-right:4px;"></i>Transportation</span>
-                    <span class="mode-tag"><i class="fa-solid fa-bed" style="font-size:9px;margin-right:4px;"></i>Accommodation</span>
-                    <span class="mode-tag"><i class="fa-solid fa-utensils" style="font-size:9px;margin-right:4px;"></i>Food and Dining</span>
-                    <span class="mode-tag"><i class="fa-solid fa-camera" style="font-size:9px;margin-right:4px;"></i>Attractions</span>
-                </div>
             </div>
             <div style="padding:22px 26px 26px;flex-shrink:0;">
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;">
@@ -3746,11 +3807,6 @@ window.sortAttractions = function(dir) {
             <div class="mode-img-wrap">
                 <img src="{{ asset('stockimages/aipowered.png') }}?v={{ filemtime(public_path('stockimages/aipowered.png')) }}" alt="AI Planning">
                 <div class="mode-img-fade"></div>
-                <div class="mode-tags">
-                    <span class="mode-tag"><i class="fa-solid fa-bolt" style="font-size:9px;margin-right:4px;"></i>Instant Itinerary</span>
-                    <span class="mode-tag"><i class="fa-solid fa-wand-magic-sparkles" style="font-size:9px;margin-right:4px;"></i>Personalized Picks</span>
-                    <span class="mode-tag"><i class="fa-solid fa-wallet" style="font-size:9px;margin-right:4px;"></i>Budget Optimized</span>
-                </div>
             </div>
             <div style="padding:22px 26px 26px;flex-shrink:0;">
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;">

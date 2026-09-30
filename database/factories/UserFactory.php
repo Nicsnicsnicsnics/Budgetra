@@ -21,8 +21,6 @@ class UserFactory extends Factory
             // budget is typed in, so a random draw made budget assertions pass
             // or fail depending on the seed. Tests that care set it explicitly.
             'country'         => 'Philippines',
-            'currency_code'   => 'PHP',
-            'currency_symbol' => '₱',
             'role'            => 'traveler',
             'remember_token'  => Str::random(10),
         ];

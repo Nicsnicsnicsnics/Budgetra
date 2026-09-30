@@ -1788,6 +1788,34 @@ class TripPlannerWizard extends Component
         return $this->budgetCurrency();
     }
 
+    /**
+     * A peso amount shown in the currency the BUDGET was set in.
+     *
+     * Deliberately not tripDisplayAmount(): that one switches to the
+     * destination's currency once a conversion has been accepted, which is
+     * right for a running cost but wrong for the budget range on Generate
+     * Itinerary — that card already prints the destination figure on its own
+     * line underneath, and showing it twice would leave the traveller's own
+     * currency nowhere on screen.
+     */
+    public function budgetDisplayAmount(int|float $pesoAmount): string
+    {
+        $code = $this->budgetCurrency();
+
+        if ($code === '' || $code === 'PHP') {
+            return '₱' . number_format($pesoAmount);
+        }
+
+        $rate = (new CurrencyConverterService())->rateToPhp($code);
+        if ($rate === null) {
+            // No rate means the figure is still in pesos, so it keeps the
+            // peso sign. Labelling it with the home symbol would be a lie.
+            return '₱' . number_format($pesoAmount);
+        }
+
+        return $this->budgetCurrencySymbol() . number_format($pesoAmount / $rate);
+    }
+
     public function tripDisplayAmount(int|float $pesoAmount): string
     {
         $code = $this->displayCurrency();

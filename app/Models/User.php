@@ -12,7 +12,7 @@ class User extends Authenticatable
     protected $fillable = [
         'full_name', 'first_name', 'middle_name', 'last_name', 'contact_number',
         'email', 'password', 'phone', 'country',
-        'currency_code', 'currency_symbol', 'role', 'profile_photo', 'theme',
+        'role', 'profile_photo', 'theme',
         'default_buffer_pct', 'notify_budget_alerts', 'notify_trip_reminders',
         'notify_itinerary_reminders', 'ocr_auto_categorize',
     ];

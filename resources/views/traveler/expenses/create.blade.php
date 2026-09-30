@@ -174,7 +174,7 @@
 @if ($trips->isEmpty())
 <div class="empty-state-center" style="min-height:70vh;">
     <div style="width:72px;height:72px;border-radius:20px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;margin-bottom:20px;">
-        <i class="fa-solid fa-receipt" style="font-size:32px;color:var(--primary);"></i>
+        <x-nav-icon icon="expenses" style="font-size:32px;color:var(--primary);" />
     </div>
     <h2 style="font-weight:700;margin-bottom:8px;">No trips planned yet</h2>
     <p class="text-muted" style="max-width:320px;margin-bottom:24px;">Plan a trip first before logging your expenses.</p>

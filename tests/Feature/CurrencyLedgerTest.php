@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\CurrencyConverterService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
@@ -24,9 +25,13 @@ class CurrencyLedgerTest extends TestCase
     // form now carries a real currency selector (a traveller in Japan picks ¥),
     // so what matters is that it defaults from the TRIP, never from the account's
     // leftover USD setting. Savings are still peso-only.
-    public function test_amount_inputs_ignore_a_stale_usd_account_preference(): void
+    public function test_amount_inputs_take_their_currency_from_the_trip(): void
     {
-        $user = User::factory()->create(['currency_code' => 'USD', 'currency_symbol' => '$']);
+        // There is no account preference left to ignore — the columns that
+        // held it are dropped (see the 2026_09_26 migration), which is the
+        // structural version of this guarantee. What is still worth pinning
+        // is where the forms DO get their currency: the trip.
+        $user = User::factory()->create();
         Trip::factory()->create(['user_id' => $user->id, 'destination_currency' => null]);
 
         $this->actingAs($user)->get(route('expenses.create'))
@@ -56,13 +61,44 @@ class CurrencyLedgerTest extends TestCase
             ->assertSee('value="JPY" selected', false);
     }
 
-    public function test_currency_helpers_ignore_a_stale_account_preference(): void
+    public function test_the_ledger_helpers_always_say_pesos(): void
     {
-        $user = User::factory()->create(['currency_code' => 'USD', 'currency_symbol' => '$']);
-        $this->actingAs($user);
+        // Everything is STORED in pesos, whatever country the traveller
+        // registered with. These two report that ledger, and they are not the
+        // traveller's own currency — home_currency() is, and the test below
+        // keeps the two from being confused again.
+        $this->actingAs(User::factory()->create(['country' => 'United States']));
 
         $this->assertSame('₱', currency_symbol());
         $this->assertSame('PHP', currency_code());
+    }
+
+    public function test_the_travellers_own_currency_comes_from_their_country(): void
+    {
+        // The pair above reading PHP for an American account is correct and
+        // was mistaken for a bug when it sat in a database column next to
+        // "United States". This is the value that actually answers "what
+        // currency is this traveller in", and it is derived, never stored.
+        $this->actingAs(User::factory()->create(['country' => 'United States']));
+        $this->assertSame('USD', home_currency());
+
+        $this->actingAs(User::factory()->create(['country' => 'Japan']));
+        $this->assertSame('JPY', home_currency());
+
+        // country is nullable at registration, so PHP is the honest default.
+        $this->actingAs(User::factory()->create(['country' => null]));
+        $this->assertSame('PHP', home_currency());
+    }
+
+    public function test_the_account_currency_columns_are_gone(): void
+    {
+        // They never converted anything — they relabelled peso figures,
+        // including amount INPUTS, so a traveller typing 100 for a $100
+        // dinner stored 100 pesos. Nothing may start reading them again.
+        $this->assertFalse(Schema::hasColumn('users', 'currency_code'));
+        $this->assertFalse(Schema::hasColumn('users', 'currency_symbol'));
+        $this->assertNotContains('currency_code', (new User())->getFillable());
+        $this->assertNotContains('currency_symbol', (new User())->getFillable());
     }
 
     // A failing provider used to be retried on every single call — 26 times on

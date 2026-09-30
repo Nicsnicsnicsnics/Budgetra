@@ -210,3 +210,104 @@ if (! function_exists('trip_display_name')) {
             ?: (($trip->destination && $trip->destination !== 'Draft') ? $trip->destination : 'No destination set');
     }
 }
+
+if (! function_exists('notification_meta')) {
+    /**
+     * How one notification type presents itself: its heading, its icon, and
+     * the two colours its icon tile is drawn with.
+     *
+     * The `message` column carries the detail, but not a title — every view
+     * that lists notifications has to derive one from `type`. This lived as a
+     * closure inside the notifications page until the dashboard's attention
+     * panel needed the same twelve arms; a second copy is how the two drift
+     * into disagreeing about what a budget_alert is called.
+     *
+     * Colours are rgba over the surface rather than flat hex so the tiles stay
+     * legible on nightflight, where a solid tint would sit on a dark card.
+     * 'neutral' uses tokens for the same reason.
+     *
+     * @return array{style: string, icon: string, title: string, bg: string, fg: string}
+     */
+    function notification_meta(string $type): array
+    {
+        $meta = match ($type) {
+            'budget_alert'         => ['style' => 'danger',  'icon' => 'fa-triangle-exclamation', 'title' => 'Budget exceeded'],
+            'budget_warning'       => ['style' => 'warning', 'icon' => 'fa-clock',                'title' => 'Budget almost reached'],
+            'trip_created'         => ['style' => 'success', 'icon' => 'fa-circle-check',         'title' => 'Trip saved'],
+            'savings_goal_reached' => ['style' => 'success', 'icon' => 'fa-piggy-bank',           'title' => 'Savings goal reached'],
+            // Was missing entirely and fell through to the default bell, even
+            // though SavingsGoalManager::submitDeposit() emits it on every
+            // deposit — the most frequent savings notification there is.
+            'savings_goal_deposit' => ['style' => 'success', 'icon' => 'fa-coins',                'title' => 'Savings deposit added'],
+            'expense_added'        => ['style' => 'neutral', 'icon' => 'fa-receipt',              'title' => 'Receipt scanned and added'],
+            'trip_shared'          => ['style' => 'success', 'icon' => 'fa-user-group',           'title' => 'Added to a trip'],
+            'group_member_added'   => ['style' => 'neutral', 'icon' => 'fa-user-plus',            'title' => 'Added as a travel companion'],
+            'trip_reminder'        => ['style' => 'neutral', 'icon' => 'fa-plane',                'title' => 'Trip reminder'],
+            'itinerary_reminder'   => ['style' => 'neutral', 'icon' => 'fa-calendar',             'title' => 'Itinerary reminder'],
+            default                => ['style' => 'neutral', 'icon' => 'fa-bell',                 'title' => 'Notification'],
+        };
+
+        $colors = [
+            'danger'  => ['bg' => 'rgba(220,38,38,0.14)', 'fg' => '#DC2626'],
+            'warning' => ['bg' => 'rgba(217,119,6,0.14)', 'fg' => '#D97706'],
+            'success' => ['bg' => 'rgba(22,163,74,0.14)', 'fg' => '#16A34A'],
+            'neutral' => ['bg' => 'var(--border)',        'fg' => 'var(--muted)'],
+        ];
+
+        return $meta + $colors[$meta['style']];
+    }
+}
+
+if (!function_exists('system_icon')) {
+    /**
+     * The custom CSS declaration for one of the PNGs in public/systemicons.
+     *
+     * The icons are black silhouettes on transparency, so they are painted
+     * rather than drawn: .app-icon uses this URL as a mask and fills it with
+     * currentColor. That is what lets them sit on the dark sidebar at all —
+     * a plain <img> would be black on #3D2411 — and it means each one picks
+     * up its row's own colour, including the red on Logout, the way a font
+     * glyph always did.
+     *
+     * filemtime busts the cache. These icons are hand-drawn and get redrawn;
+     * without it, replacing a PNG leaves every returning traveler looking at
+     * the old one.
+     *
+     * $var names the custom property. It defaults to the one .app-icon reads,
+     * which is what nearly every caller wants. The sidebar's toggle names its
+     * two chevrons separately so CSS can choose between them on collapse —
+     * see #sidebarToggleIcon in style.css.
+     */
+    function system_icon(string $name, string $var = 'app-icon'): string
+    {
+        $path = public_path("systemicons/{$name}.png");
+        $url  = asset("systemicons/{$name}.png");
+
+        if (is_file($path)) {
+            $url .= '?v=' . filemtime($path);
+        }
+
+        return "--{$var}:url({$url})";
+    }
+}
+
+if (!function_exists('trip_search_haystack')) {
+    /**
+     * Everything a trip should be findable by, lowercased for matching.
+     *
+     * Saved Trips and the Multi-Trip Hub filter in the browser rather than on
+     * the server, so this is the client-side counterpart of the WHERE clause
+     * those screens used to run. The three fields are the same ones: a trip
+     * renamed "Barkada Getaway" no longer contains the place it goes to, so
+     * the destination has to be searchable alongside the name, and a
+     * multi-city trip has to be findable by its second leg.
+     */
+    function trip_search_haystack(\App\Models\Trip $trip): string
+    {
+        return mb_strtolower(trim(implode(' ', array_filter([
+            $trip->destination,
+            $trip->trip_name,
+            $trip->leg2_destination,
+        ]))));
+    }
+}
