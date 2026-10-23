@@ -52,8 +52,8 @@ class ProfileCatalog
     ];
 
     public const TRAVEL_STYLES = [
-        'Solo'  => ['icon' => 'fa-user', 'desc' => 'Travel at your own pace with a budget built for one.', 'image' => 'solo.jpg'],
-        'Group' => ['icon' => 'fa-user-group',      'desc' => 'Divide expenses and explore together, no one overpays.', 'image' => 'group.jpg'],
+        'Solo'  => ['icon' => 'fa-user', 'desc' => 'Travel alone and plan your budget your way.', 'image' => 'solo.jpg'],
+        'Group' => ['icon' => 'fa-user-group',      'desc' => 'Travel with others and plan your budget together.', 'image' => 'group.jpg'],
     ];
 
     public const TRANSPORTATION_OPTIONS = [

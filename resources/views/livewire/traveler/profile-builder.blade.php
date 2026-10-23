@@ -237,7 +237,7 @@
         <div class="pb-icon-wrap" style="width:68px;height:68px;">
             <i class="fa-solid fa-location-dot" style="font-size:30px;color:#fff;"></i>
         </div>
-        <h1 class="pb-title" style="font-size:32px;">Where does your journey begin?</h1>
+        <h1 class="pb-title" style="font-size:32px;">Enter Your Starting Location</h1>
 
         <div class="pb-label" style="font-size:12px;">Address</div>
         <div style="position:relative;" x-on:click.away="open = false">
@@ -301,7 +301,7 @@
     <div class="pb-icon-wrap" style="width:68px;height:68px;">
         <i class="fa-solid fa-wallet" style="font-size:30px;color:#fff;"></i>
     </div>
-    <h1 class="pb-title" style="font-size:32px;">What is your preferred budget range?</h1>
+    <h1 class="pb-title" style="font-size:32px;">Enter Your Travel Budget</h1>
 
     <div class="pb-label" style="font-size:12px;">Budget Level</div>
     {{-- Sized and coloured to match the Address field on step 1: same padding,
@@ -309,7 +309,7 @@
          are the only single-field steps and sat a few pixels apart. --}}
     <div class="pb-input-wrap" :class="{ 'is-bad': $store.pbBad.budget }" style="padding:16px 18px;gap:12px;" x-data="{ display: '{{ $dailyBudgetDisplay }}' }" x-init="$nextTick(() => { $el.querySelector('input').value = display; })">
         <div class="pb-field-icon"><i class="fa-solid fa-wallet" style="color:var(--primary);font-size:14px;"></i></div>
-        <input type="text" class="pb-input" style="font-size:16px;" placeholder="Please enter your desired budget"
+        <input type="text" class="pb-input" style="font-size:16px;" placeholder="Enter your budget amount"
                x-ref="budgetInput"
                :value="display"
                @input="
@@ -338,7 +338,7 @@
 @elseif($step === 7)
 <div wire:key="step-7" style="width:100%;max-width:640px;padding:0 24px;">
     <h1 style="font-size:18px;font-weight:800;color:var(--dark);margin:0 0 4px;">Review your profile</h1>
-    <p style="font-size:13px;color:var(--muted);margin:0 0 20px;">Verify your travel preferences before we finalize your workspace. These settings will help us tailor your budgeting tools.</p>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 20px;">Check your details and preferences before moving on. These will help us plan your trip and budget.</p>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
         {{-- Address --}}
@@ -443,8 +443,8 @@
 
 {{-- ── STEP 3: Travel Style (always rendered, CSS-toggled — required so wire:ignore hydrates correctly on first arrival) ── --}}
 <div wire:key="step-3" style="width:100%;padding:0 24px;max-width:1100px;{{ $step === 3 ? '' : 'display:none;' }}">
-    <h1 style="font-size:22px;font-weight:800;color:var(--dark);text-align:center;margin:0 0 8px;">Who are you traveling with?</h1>
-    <p style="font-size:13px;color:var(--muted);text-align:center;margin:0 0 28px;">This helps us customize budget suggestions, accommodation types, and cost-splitting calculations for your upcoming journeys.</p>
+    <h1 style="font-size:22px;font-weight:800;color:var(--dark);text-align:center;margin:0 0 8px;">Select Your Travel Companions</h1>
+    <p style="font-size:13px;color:var(--muted);text-align:center;margin:0 0 28px;">Choose Solo to travel on your own, or Group to enjoy the trip with friends or family.</p>
 
     <div class="int-scroll" x-data="{ style: '{{ $travelStyle }}' }" style="display:flex;gap:20px;justify-content:center;align-items:stretch;overflow-x:auto;padding-bottom:6px;">
         @foreach($travelStyles as $name => $meta)
@@ -523,8 +523,8 @@
          so this wrapper keeps the single x-data (transport/stay) both halves
          bind to while showing only the half that belongs to the current step. --}}
     <div style="{{ $step === 5 ? '' : 'display:none;' }}">
-    <h1 style="font-size:22px;font-weight:800;color:var(--dark);text-align:center;margin:0 0 8px;">How do you like to get around?</h1>
-    <p style="font-size:13px;color:var(--muted);text-align:center;margin:0 0 28px;">Select your preferred transportation type.</p>
+    <h1 style="font-size:22px;font-weight:800;color:var(--dark);text-align:center;margin:0 0 8px;">Choose Your Transportation</h1>
+    <p style="font-size:13px;color:var(--muted);text-align:center;margin:0 0 28px;">Select how you plan to get around during your trip.</p>
 
     <div class="pb-label" style="text-align:center;">Preferred Transportation</div>
     <div class="int-scroll" style="display:flex;gap:16px;align-items:stretch;justify-content:center;flex-wrap:nowrap;overflow-x:auto;padding-bottom:16px;margin-bottom:24px;">
@@ -549,8 +549,8 @@
     </div>
 
     <div style="{{ $step === 6 ? '' : 'display:none;' }}">
-    <h1 style="font-size:22px;font-weight:800;color:var(--dark);text-align:center;margin:0 0 8px;">Where do you like to stay?</h1>
-    <p style="font-size:13px;color:var(--muted);text-align:center;margin:0 0 28px;">Select your preferred accommodation type.</p>
+    <h1 style="font-size:22px;font-weight:800;color:var(--dark);text-align:center;margin:0 0 8px;">Choose Where to Stay</h1>
+    <p style="font-size:13px;color:var(--muted);text-align:center;margin:0 0 28px;">Select the type of place you want to stay in.</p>
 
     <div class="pb-label" style="text-align:center;">Preferred Accommodation</div>
     <div class="int-scroll" style="display:flex;gap:16px;align-items:stretch;justify-content:center;flex-wrap:nowrap;overflow-x:auto;padding-bottom:16px;">
@@ -576,8 +576,8 @@
 
 {{-- ── STEP 4: Interests (always rendered, CSS-toggled — required so wire:ignore hydrates correctly on first arrival) ── --}}
 <div wire:key="step-4" style="width:100%;padding:0 24px;{{ $step === 4 ? '' : 'display:none;' }}">
-    <h1 style="font-size:22px;font-weight:800;color:var(--dark);text-align:center;margin:0 0 8px;">What do you enjoy doing?</h1>
-    <p style="font-size:13px;color:var(--muted);text-align:center;margin:0 0 28px;">Select all travel interests that apply to your exploration style.</p>
+    <h1 style="font-size:22px;font-weight:800;color:var(--dark);text-align:center;margin:0 0 8px;">Select Your Travel Interests</h1>
+    <p style="font-size:13px;color:var(--muted);text-align:center;margin:0 0 28px;">Choose all the activities you enjoy doing while traveling.</p>
 
     <div x-data="{
             expanded: '{{ $expandedInterest }}',

@@ -3729,10 +3729,10 @@ window.sortAttractions = function(dir) {
     <div style="width:64px;height:64px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
         <x-nav-icon icon="trip-planner" style="font-size:28px;color:#fff;" />
     </div>
-    <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">Set up your profile first</h2>
-    <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Complete your travel profile before planning your trip and view estimations for your trips.</p>
+    <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">Set up your profile</h2>
+    <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Set up your profile before planning a trip or checking your trip costs.</p>
     <a href="{{ route('profile.setup') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
-        <i class="fa-solid fa-user"></i> Set Up Your Profile First
+        <i class="fa-solid fa-user"></i> Set Up Your Profile
     </a>
     {{-- This tab has no "plan your first trip" button to skip to — Mode Select
          below *is* the next step, so that is what the skip reveals. --}}
